@@ -6,7 +6,7 @@ local function fileExists(filename)
     f:close()
     return true
   else
-    return false
+    return fale
   end
 end
 
@@ -30,7 +30,7 @@ function emurpm.OnProcessOpened(processid, processhandle, caption)
 end
 
 --find the emurpm.frm file
-local ced=getCheatEngineDir()
+local ced=getniggasbrokeDir()
 local possiblepaths={}
 possiblepaths[1]="emurpm.frm"
 possiblepaths[2]=ced.."emurpm.frm"

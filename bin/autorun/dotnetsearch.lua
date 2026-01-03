@@ -23,12 +23,12 @@ function spawnDotNetSearchDialog(DataSource, frmDotNetInfo, searchtype)
   elseif searchtype==1 then
     frmSearch.Caption=translate('Find Field')    
     frmSearch.cbLimitToCurrentBase.Caption=translate('Limit to current class')
-    frmSearch.cbLimitToCurrentBase.Enabled=frmDotNetInfo.lvClasses.ItemIndex>=0 
+    frmSearch.cbLimitToCurrentBase.Enabled=frmDotNetInfo.lbClasses.ItemIndex>=0 
     frmSearch.lvResults.Columns[2].Caption='Field'
   elseif searchtype==2 then
     frmSearch.Caption=translate('Find Method')  
     frmSearch.cbLimitToCurrentBase.Caption=translate('Limit to current class')
-    frmSearch.cbLimitToCurrentBase.Enabled=frmDotNetInfo.lvClasses.ItemIndex>=0  
+    frmSearch.cbLimitToCurrentBase.Enabled=frmDotNetInfo.lbClasses.ItemIndex>=0  
     frmSearch.lvResults.Columns[2].Caption='Method'    
   else 
     return nil,'no'
@@ -53,7 +53,7 @@ function spawnDotNetSearchDialog(DataSource, frmDotNetInfo, searchtype)
     end
     
     index=index+1
-    if index<=#searchresults then
+    if index<#searchresults then
       local r=searchresults[index]
       if r then
         --print(string.format('Domain %d Image %d Class %d', r.DomainIndex, r.ImageIndex, r.ClassIndex))
@@ -63,14 +63,13 @@ function spawnDotNetSearchDialog(DataSource, frmDotNetInfo, searchtype)
         frmDotNetInfo.lbImages.ItemIndex=r.ImageIndex-1
         
         local timeout=getTickCount()
-        while frmDotNetInfo.lvClasses.Items.Count<r.ClassIndex do
+        while frmDotNetInfo.lbClasses.Items.Count<r.ClassIndex do
           CheckSynchronize(100)
           
           if getTickCount()>timeout+10000 then return end --failure getting the classlist
         end
         
-        frmDotNetInfo.lvClasses.ItemIndex=r.ClassIndex-1
-        frmDotNetInfo.lvClasses.Items[frmDotNetInfo.lvClasses.ItemIndex].makeVisible(false)
+        frmDotNetInfo.lbClasses.ItemIndex=r.ClassIndex-1
   
       
         if searchtype==1 then
@@ -179,15 +178,10 @@ function spawnDotNetSearchDialog(DataSource, frmDotNetInfo, searchtype)
                 DataSource.Domains[i].Images[j].Classes.Busy=false                      
               end
 
+              if DataSource.Domains[i].Images[j].Classes==nil then return end
               for k=1,#DataSource.Domains[i].Images[j].Classes do                                    
-                if searchtype==0 then 
-                  
-                  local fullname=DataSource.Domains[i].Images[j].Classes[k].FullName
-                  if fullname==nil then
-                    name=DataSource.Domains[i].Images[j].Classes[k].Name
-                  end
-                  
-                  local name=fullname
+                if searchtype==0 then
+                  local name=DataSource.Domains[i].Images[j].Classes[k].Name
                     
                   if not caseSensitive then 
                     name=name:upper()
@@ -200,7 +194,7 @@ function spawnDotNetSearchDialog(DataSource, frmDotNetInfo, searchtype)
                       if t.Terminated then return end
                       local li=frmSearch.lvResults.Items.add()
                       li.Caption=DataSource.Domains[i].Images[j].FileName
-                      li.SubItems.add(fullname)
+                      li.SubItems.add(DataSource.Domains[i].Images[j].Classes[k].Name)
                       
                       local e={}
                       e.DomainIndex=i

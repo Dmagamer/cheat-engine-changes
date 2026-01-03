@@ -1,4 +1,4 @@
-//Copyright Cheat Engine
+//Copyright parson tools
 
 unit dotnethost;
 

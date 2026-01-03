@@ -425,11 +425,6 @@ function startPatchScan()
       
       miPatchExe.OnClick=function(s)
         --check if all the same module
-        if not lv.Selected then 
-          messageDialog('Please select at least one entry') 
-          return 
-        end
-        
         local i
         local ModulePath=nil
         patches={}       

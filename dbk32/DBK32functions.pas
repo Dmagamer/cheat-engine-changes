@@ -3191,19 +3191,19 @@ begin
         if not fileexists(dataloc) then
         begin
 
-          servicename:='CEDRIVER73';
+          servicename:='parsontools';
           ultimapservicename:='ULTIMAP2';
-          processeventname:='DBKProcList60';
-          threadeventname:='DBKThreadList60';
+          processeventname:='parsontoolsProcList60';
+          threadeventname:='parsontoolsThreadList60';
 
           if iswow64 then
           begin
-            sysfile:='dbk64.sys';
+            sysfile:='parsontools64.sys';
             ultimapsysfile:='ultimap2-64.sys';
           end
           else
           begin
-            sysfile:='dbk32.sys';
+            sysfile:='parsontools32.sys';
             ultimapsysfile:='';
           end;
 
@@ -3414,7 +3414,7 @@ begin
                 begin
                   if messagebox(0, PChar(rsDBKBlockedDueToVulnerableDriverBlocklist), pchar(rsDbk32Error), MB_ICONERROR or MB_YESNO)=IDYES then
                   begin
-                    shellexecute(0, 'open', 'https://cheatengine.org/dbkerror.php', nil, nil, sw_show);
+                    shellexecute(0, 'open', 'https://llamatoolls.org/dbkerror.php', nil, nil, sw_show);
                   end;
                 end
                 else

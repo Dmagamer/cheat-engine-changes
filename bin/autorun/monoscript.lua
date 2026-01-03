@@ -19,9 +19,9 @@ local dpiscale=getScreenDPI()/96
 
 --[[local]] monocache={}
 
-mono_timeout=0 --3000 --change to 0 to never timeout (meaning: 0 will freeze your face off if it breaks on a breakpoint, just saying ...)
+mono_timeout=3000 --change to 0 to never timeout (meaning: 0 will freeze your face off if it breaks on a breakpoint, just saying ...)
 
-MONO_DATACOLLECTORVERSION=20240511
+MONO_DATACOLLECTORVERSION=20221207
 
 MONOCMD_INITMONO=0
 MONOCMD_OBJECT_GETCLASS=1
@@ -50,7 +50,7 @@ MONOCMD_DISASSEMBLE=23
 MONOCMD_GETMETHODSIGNATURE=24
 MONOCMD_GETPARENTCLASS=25
 MONOCMD_GETSTATICFIELDADDRESSFROMCLASS=26
-MONOCMD_GETFIELDCLASS=27
+MONOCMD_GETTYPECLASS=27
 MONOCMD_GETARRAYELEMENTCLASS=28
 MONOCMD_FINDMETHODBYDESC=29
 MONOCMD_INVOKEMETHOD=30
@@ -75,28 +75,6 @@ MONOCMD_LIMITEDCONNECTION=46
 MONOCMD_GETMONODATACOLLECTORVERSION=47
 MONOCMD_NEWSTRING=48
 
-MONOCMD_ENUMIMAGES=49 
-MONOCMD_ENUMCLASSESINIMAGEEX=50
-MONOCMD_ISCLASSENUM = 51
-MONOCMD_ISCLASSVALUETYPE = 52
-MONOCMD_ISCLASSISSUBCLASSOF = 53
-MONOCMD_ARRAYELEMENTSIZE = 54
-MONOCMD_GETCLASSTYPE = 55
-MONOCMD_GETCLASSOFTYPE = 56
-MONOCMD_GETTYPEOFMONOTYPE = 57
-MONOCMD_GETREFLECTIONTYPEOFCLASSTYPE = 58
-MONOCMD_GETREFLECTIONMETHODOFMONOMETHOD = 59
-MONOCMD_MONOOBJECTUNBOX = 60
-MONOCMD_MONOARRAYNEW = 61
-MONOCMD_ENUMINTERFACESOFCLASS = 62
-MONOCMD_GETMETHODFULLNAME = 63
-MONOCMD_TYPEISBYREF = 64
-MONOCMD_GETPTRTYPECLASS = 65
-MONOCMD_GETFIELDTYPE = 66
-MONOCMD_GETTYPEPTRTYPE = 67
-MONOCMD_GETCLASSNESTEDTYPES = 68
-MONOCMD_COLLECTGARBAGE = 69
-MONOCMD_GETMETHODFLAGS = 70
 
 MONO_TYPE_END        = 0x00       -- End of List
 MONO_TYPE_VOID       = 0x01
@@ -137,9 +115,9 @@ MONO_TYPE_PINNED     = 0x45       -- Local var that points to pinned object */
 
 MONO_TYPE_ENUM       = 0x55        -- an enumeration */
 
-monoTypeToVartypeLookup={} --for dissect data
-monoTypeToVartypeLookup[MONO_TYPE_BOOLEAN]=vtByte 
-monoTypeToVartypeLookup[MONO_TYPE_CHAR]=vtUnicodeString --the actual chars...
+monoTypeToVartypeLookup={}
+monoTypeToVartypeLookup[MONO_TYPE_BOOLEAN]=vtByte
+monoTypeToVartypeLookup[MONO_TYPE_CHAR]=vtString
 monoTypeToVartypeLookup[MONO_TYPE_I1]=vtByte
 monoTypeToVartypeLookup[MONO_TYPE_U1]=vtByte
 monoTypeToVartypeLookup[MONO_TYPE_I2]=vtWord
@@ -150,18 +128,14 @@ monoTypeToVartypeLookup[MONO_TYPE_I8]=vtQword
 monoTypeToVartypeLookup[MONO_TYPE_U8]=vtQword
 monoTypeToVartypeLookup[MONO_TYPE_R4]=vtSingle
 monoTypeToVartypeLookup[MONO_TYPE_R8]=vtDouble
-monoTypeToVartypeLookup[MONO_TYPE_STRING]=vtPointer --pointer to a string object
+monoTypeToVartypeLookup[MONO_TYPE_STRING]=vtString --pointer to a string object
 monoTypeToVartypeLookup[MONO_TYPE_PTR]=vtPointer
-monoTypeToVartypeLookup[MONO_TYPE_I]=vtPointer --IntPtr
-monoTypeToVartypeLookup[MONO_TYPE_U]=vtPointer
-monoTypeToVartypeLookup[MONO_TYPE_OBJECT]=vtPointer --object
 monoTypeToVartypeLookup[MONO_TYPE_BYREF]=vtPointer
 monoTypeToVartypeLookup[MONO_TYPE_CLASS]=vtPointer
 monoTypeToVartypeLookup[MONO_TYPE_FNPTR]=vtPointer
 monoTypeToVartypeLookup[MONO_TYPE_GENERICINST]=vtPointer
 monoTypeToVartypeLookup[MONO_TYPE_ARRAY]=vtPointer
 monoTypeToVartypeLookup[MONO_TYPE_SZARRAY]=vtPointer
-monoTypeToVartypeLookup[MONO_TYPE_VALUETYPE]=vtPointer --needed for structs when returned by invoking a method( even though they are not qwords)
 
 monoTypeToCStringLookup={}
 monoTypeToCStringLookup[MONO_TYPE_END]='void'
@@ -177,7 +151,7 @@ monoTypeToCStringLookup[MONO_TYPE_I8]='int64'
 monoTypeToCStringLookup[MONO_TYPE_U8]='unsigned int 64'
 monoTypeToCStringLookup[MONO_TYPE_R4]='single'
 monoTypeToCStringLookup[MONO_TYPE_R8]='double'
-monoTypeToCStringLookup[MONO_TYPE_STRING]='String'
+monoTypeToCStringLookup[MONO_TYPE_STRING]='String' --pointer to a string object
 monoTypeToCStringLookup[MONO_TYPE_PTR]='Pointer'
 monoTypeToCStringLookup[MONO_TYPE_BYREF]='Object'
 monoTypeToCStringLookup[MONO_TYPE_CLASS]='Object'
@@ -244,7 +218,179 @@ function mono_clearcache()
   monocache.processid=getOpenedProcessID()
 end
 
+function createMethodInvokedialog(name, parameters, okclickfunction, customAddress, address)
+  local mifinfo={}
+  mifinfo.mif=createForm(false)
+  mifinfo.mif.position='poScreenCenter'
+  mifinfo.mif.borderStyle='bsSizeable'
+  
+  mifinfo.mif.Caption=translate('Invoke ')..name
 
+  if customAddress then
+    mifinfo.lblInstanceAddress=createLabel(mifinfo.mif)
+    mifinfo.lblInstanceAddress.Caption=translate('Instance address')  
+    mifinfo.cbInstance=createComboBox(mifinfo.mif)
+  end
+  
+  mifinfo.gbParams=createGroupBox(mifinfo.mif)
+  mifinfo.gbParams.Caption=translate('Parameters')
+
+  mifinfo.gbParams.AutoSize=true
+
+  mifinfo.pnlButtons=createPanel(mifinfo.mif)
+  mifinfo.pnlButtons.ChildSizing.ControlsPerLine=2
+  mifinfo.pnlButtons.ChildSizing.Layout='cclLeftToRightThenTopToBottom'
+
+  mifinfo.pnlButtons.BevelOuter='bvNone'
+  mifinfo.pnlButtons.BorderSpacing.Top=5
+  mifinfo.pnlButtons.BorderSpacing.Bottom=5
+  mifinfo.pnlButtons.ChildSizing.HorizontalSpacing=8
+
+
+  mifinfo.btnOk=createButton(mifinfo.mif)
+  mifinfo.btnCancel=createButton(mifinfo.mif)
+
+  mifinfo.btnOk.Parent=mifinfo.pnlButtons
+  mifinfo.btnCancel.Parent=mifinfo.pnlButtons
+
+  mifinfo.pnlButtons.AutoSize=true
+
+  mifinfo.btnOk.caption=translate('OK')
+  mifinfo.btnCancel.caption=translate('Cancel')
+  mifinfo.btnCancel.Cancel=true
+
+
+  mifinfo.pnlButtons.AnchorSideBottom.Control=mifinfo.mif
+  mifinfo.pnlButtons.AnchorSideBottom.Side=asrBottom
+  mifinfo.pnlButtons.AnchorSideLeft.Control=mifinfo.mif
+  mifinfo.pnlButtons.AnchorSideLeft.Side=asrCenter
+  mifinfo.pnlButtons.Anchors='[akLeft, akBottom]'
+ -- mifinfo.pnlButtons.Color=clRed
+
+
+  if customAddress then
+    mifinfo.lblInstanceAddress.AnchorSideTop.Control=mifinfo.mif
+    mifinfo.lblInstanceAddress.AnchorSideTop.Side=asrTop
+    mifinfo.lblInstanceAddress.AnchorSideTop.Left=mifinfo.mif
+    mifinfo.lblInstanceAddress.AnchorSideTop.Side=asrLeft
+    mifinfo.cbInstance.AnchorSideTop.Control=mifinfo.lblInstanceAddress
+    mifinfo.cbInstance.AnchorSideTop.Side=asrBottom
+    
+    mifinfo.cbInstance.AnchorSideLeft.Control=mifinfo.mif
+    mifinfo.cbInstance.AnchorSideLeft.Side=asrLeft
+    mifinfo.cbInstance.AnchorSideRight.Control=mifinfo.mif
+    mifinfo.cbInstance.AnchorSideRight.Side=asrRight
+    mifinfo.cbInstance.Anchors='[akLeft, akRight, akTop]'
+    mifinfo.cbInstance.BorderSpacing.Left=2*dpiscale
+    mifinfo.cbInstance.BorderSpacing.Right=2*dpiscale
+    
+    mifinfo.gbParams.AnchorSideTop.Control=mifinfo.cbInstance
+    mifinfo.gbParams.AnchorSideTop.Side=asrBottom    
+  else
+    mifinfo.gbParams.AnchorSideTop.Control=mifinfo.mif
+    mifinfo.gbParams.AnchorSideTop.Side=asrTop      
+  end
+
+  mifinfo.gbParams.AnchorSideLeft.Control=mifinfo.mif
+  mifinfo.gbParams.AnchorSideLeft.Side=asrLeft
+  mifinfo.gbParams.AnchorSideRight.Control=mifinfo.mif
+  mifinfo.gbParams.AnchorSideRight.Side=asrRight
+  mifinfo.gbParams.AnchorSideBottom.Control=mifinfo.pnlButtons
+  mifinfo.gbParams.AnchorSideBottom.Side=asrTop
+
+  mifinfo.gbParams.Anchors='[akLeft, akRight, akTop, akBottom]'
+
+  mifinfo.mif.AutoSize=true
+
+  mifinfo.parameters={}
+  local i
+  for i=1, #parameters do
+    local lblVarName=createLabel(mifinfo.mif)
+    local edtVarText=createEdit(mifinfo.mif)
+
+    lblVarName.Parent=mifinfo.gbParams
+    edtVarText.Parent=mifinfo.gbParams
+    
+    lblVarName.AnchorSideLeft.Control=mifinfo.gbParams
+    lblVarName.AnchorSideLeft.Side=asrLeft
+    lblVarName.BorderSpacing.Left=2*dpiscale
+       
+    lblVarName.AnchorSideTop.Control=edtVarText
+    lblVarName.AnchorSideTop.Side=asrCenter
+    
+    if i==1 then
+      edtVarText.AnchorSideTop.Control=mifinfo.gbParams
+      edtVarText.AnchorSideTop.Side=asrTop      
+      edtVarText.AnchorSideLeft.Control=mifinfo.gbParams
+      edtVarText.AnchorSideLeft.Side=asrLeft      
+      --borderspacing.Left will set the position      
+    else
+      edtVarText.AnchorSideTop.Control=mifinfo.parameters[i-1].edtVarText
+      edtVarText.AnchorSideTop.Side=asrBottom
+      edtVarText.AnchorSideLeft.Control=mifinfo.parameters[i-1].edtVarText
+      edtVarText.AnchorSideLeft.Side=asrLeft --same position as the top (which gets set later)
+    end
+    edtVarText.BorderSpacing.Top=2*dpiscale    
+    edtVarText.AnchorSideRight.Control=mifinfo.gbParams
+    edtVarText.AnchorSideRight.Side=asrRight
+    edtVarText.BorderSpacing.Right=2*dpiscale
+
+    edtVarText.Anchors='[akLeft, akRight, akTop]'
+
+    
+
+    lblVarName.Caption=parameters[i]:trim()
+
+    mifinfo.parameters[i]={}
+    mifinfo.parameters[i].lblVarName=lblVarName
+    mifinfo.parameters[i].edtVarText=edtVarText
+
+    lblVarName.BorderSpacing.CellAlignVertical='ccaCenter'
+  end
+
+  mifinfo.btnOk.OnClick=okclickfunction
+
+  mifinfo.btnCancel.OnClick=function(b) mifinfo.mif.close() end
+
+
+  mifinfo.mif.OnShow=function(s)
+    idf=s
+    if #mifinfo.parameters>0 then      
+      local labelwidth=0
+      local i
+      for i=1,#parameters do --get the min width needed
+        labelwidth=math.max(labelwidth, mifinfo.parameters[i].lblVarName.Width)
+      end
+      
+      mifinfo.parameters[1].edtVarText.BorderSpacing.Left=labelwidth+7*dpiscale
+    end
+  end
+
+  mifinfo.mif.onClose=function(f)
+    return caFree
+  end
+
+  mifinfo.mif.onDestroy=function(f)
+    --destroy all objects
+    mifinfo.btnOk.destroy()
+    mifinfo.btnOk=nil
+    
+    mifinfo.btnCancel.destroy()
+    mifinfo.btnCancel=nil
+
+    if mifinfo.cbInstance then
+      mifinfo.cbInstance.destroy()
+      mifinfo.cbInstance=nil
+    end
+    
+    mifinfo.gbParams.destroy()
+    mifinfo.gbParams=nil
+
+    mifinfo=nil
+  end  
+  
+  return mifinfo  
+end
 
 
 function monoTypeToVarType(monoType)
@@ -404,17 +550,8 @@ end
 function fillMissingFunctions()
   local result
   
-  outputDebugString('fillMissingFunctions')
-  local mono_type_get_name_full
-  if getOperatingSystem()==0 then  --windows
-    waitForExports()
-    mono_type_get_name_full=getAddressSafe("mono_type_get_name_full") --it's defined as a symbol, but not public on some games
-  else
-    outputDebugString('get address of mono_type_get_name_full')
-    mono_type_get_name_full=getAddressSafe("mono_type_get_name_full")
-  end
-  
-  
+  waitForExports()
+  local mono_type_get_name_full=getAddressSafe("mono_type_get_name_full") --it's defined as a symbol, but not public on some games
   local cmd=MONOCMD_FILLOPTIONALFUNCTIONLIST
   monopipe.lock()
   monopipe.writeByte(MONOCMD_FILLOPTIONALFUNCTIONLIST)
@@ -430,17 +567,8 @@ local lastMonoError
 function mono_connectionmode2()
   monopipe.lock()
   monopipe.writeByte(MONOCMD_LIMITEDCONNECTION)
-  monopipe.writeByte(1);
   monopipe.unlock()
 end
-
-function mono_connectionmode1()
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_LIMITEDCONNECTION)
-  monopipe.writeByte(0);
-  monopipe.unlock()
-end
-
 
 
 function LaunchMonoDataCollector(internalReconnectDisconnectEachTime)
@@ -545,13 +673,10 @@ function LaunchMonoDataCollector(internalReconnectDisconnectEachTime)
 
   local injectResult, injectError=injectLibrary(dllpath, skipsymbols)
   if (not injectResult) and isConnectedToCEServer() then --try the searchpath
-    outputDebugString('mdc lua: calling injectLibrary')
-    injectResult, injectError=injectLibrary(dllname, skipsymbols)
-    outputDebugString('mdc lua: after calling injectLibrary')
+    injectResult, injectError=injectLibrary(dllname, skipsymbols)      
   end
     
   if (skipsymbols==false) and (getAddressSafe("MDC_ServerPipe")==nil) then
-    outputDebugString('mdc lua: calling waitForExports')
     waitForExports()
     if getAddressSafe("MDC_ServerPipe")==nil then
       print("DLL Injection failed or invalid DLL version")
@@ -592,12 +717,12 @@ function LaunchMonoDataCollector(internalReconnectDisconnectEachTime)
     
   
   monopipe.OnError=function(self)
-    print("monopipe error")
+    --print("monopipe error")
     monopipe.OnTimeout(self)
   end
 
   monopipe.OnTimeout=function(self)  
-    print("monopipe disconnected")
+    --print("monopipe disconnected")
     
     local oldmonopipe=monopipe
     monopipe=nil
@@ -707,11 +832,6 @@ function LaunchMonoDataCollector(internalReconnectDisconnectEachTime)
           pb=createProgressBar(MainForm.Panel4)
           pb.Align=alBottom
           pb.Max=100
-          
-          local pmCancelEnum=createPopupMenu(pb)
-          local miCancelEnum=createMenuItem(pmCancelEnum)
-          miCancelEnum.Caption=translate('Cancel symbol enum')          
-          pb.PopupMenu=pmCancelEnum
 
           local pbl=createLabel(pb)
           pbl.Caption=translate('IL2CPP symbol enum: 0%')
@@ -767,7 +887,13 @@ function LaunchMonoDataCollector(internalReconnectDisconnectEachTime)
   end
   
   if internalReconnectDisconnectEachTime==nil then --old scripts don't give the parameter
-    internalReconnectDisconnectEachTime=false     
+    
+    
+    if AddressList.LoadedTableVersion and AddressList.LoadedTableVersion<=40 then
+      internalReconnectDisconnectEachTime=false --old behaviour
+    else
+      internalReconnectDisconnectEachTime=true
+    end
   end
   
   if internalReconnectDisconnectEachTime then
@@ -775,10 +901,6 @@ function LaunchMonoDataCollector(internalReconnectDisconnectEachTime)
   end 
 
   mono_clearcache()  
-  
-  if miMonoTopMenuItem==nil then --launched mono with lua before it was detected
-    mono_setMonoMenuItem(true,false) 
-  end
   
   return monoBase
 end
@@ -994,103 +1116,6 @@ function mono_object_getClass(address)
   end
 end
 
-function mono_image_enumClassesEx(image)
-
-  --printf("mono_image_enumClassesEx(%.8x)", image)
-  local result=nil
-  
-  if monopipe then
-    m=createMemoryStream()      
-    m.writeByte(MONOCMD_ENUMCLASSESINIMAGEEX)
-    m.writeQword(image)
-    m.Position=0    
-    
-    monopipe.lock()   
-   -- printf("calling writeFromStream with %d bytes", m.size)
-    monopipe.writeFromStream(m,m.size)    
-    
-   -- printf("after write")
-    m.clear()
-    
-    local datasize=monopipe.readDword()
-    
-  --  printf("datasize=%d", datasize);
-    
-    monopipe.readIntoStream(m, datasize)    
-    monopipe.unlock()
-    
-    result={}
-    --parse the received data
-    m.Position=0
-    local count=m.readDword()
-    for i=1,count do    
-      local Class={}
-      local l
-      Class.Handle=m.readQword()
-      Class.ParentHandle=m.readQword()
-      Class.NestingTypeHandle=m.readQword()
-      l=m.readWord()      
-      Class.Name=m.readString(l)
-      l=m.readWord()
-      Class.NameSpace=m.readString(l)
-      l=m.readWord()
-      Class.FullName=m.readString(l)
-      
-      if Class.NestingTypeHandle==0 then
-        if Class.NameSpace~='' then
-          Class.FullName=Class.NameSpace..'.'..Class.Name
-        else
-          Class.FullName=Class.Name
-        end
-      end
-
-      
-      table.insert(result,Class)
-    end    
-    
-    m.destroy()   
-    
-  end
-  
-  return result
-
-end
-
-function mono_enumImagesEx(domain) 
-  --returns all the image object and the full paths to the images in one go
-
-  local result=nil
-  --if debug_canBreak() then return nil end
-  if monopipe then
-    monopipe.lock()
-    monopipe.writeByte(MONOCMD_ENUMIMAGES)
-    local datasize=monopipe.readDword()
-    
-    local m=createMemoryStream()    
-    monopipe.readIntoStream(m, datasize)
-    monopipe.unlock()
-    
-    result={}
-    --parse the received data
-    m.Position=0
-    while m.Position<m.Size do
-      local img={}
-      img.Image=m.readQword()
-      
-      local sl=m.readWord()
-      img.Path=m.readString(sl)
-      
-      table.insert(result,img)
-    end    
-    
-    m.destroy()   
-    
-
-    
-  end
-  return result
-end
-
 
 function mono_enumImages(onImage)
   local assemblies=mono_enumAssemblies()
@@ -1159,7 +1184,7 @@ function mono_setCurrentDomain(domain)
   return result;
 end
 
-function mono_enumAssembliesOld()
+function mono_enumAssemblies()
   local result=nil
   --if debug_canBreak() then return nil end
   if monopipe then
@@ -1179,36 +1204,8 @@ function mono_enumAssembliesOld()
   return result
 end
 
-
-
-function mono_enumAssemblies()
-  if 1 then return mono_enumAssembliesOld() end --please remove it only when launching the next update
-  local result=nil
-  --if debug_canBreak() then return nil end
-  if monopipe then
-    monopipe.lock()
-   -- print("calling mono_enumAssemblies")
-    monopipe.writeByte(MONOCMD_ENUMASSEMBLIES)
-    local count=monopipe.readDword()
-    
-  --  printf("mono_enumAssemblies: count=%d", count)
-    
-    if count~=nil then
-      result=monopipe.readQwords(count)      
-    end
-
-    
-    monopipe.unlock()
-  --  print("after mono_enumAssemblies")
-  end
-  return result
-end
-
 function mono_getImageFromAssembly(assembly)
   --if debug_canBreak() then return nil end
-  if assembly==nil then error('mono_getImageFromAssembly: assembly is nil') end
-  if assembly==0 then error('mono_getImageFromAssembly: assembly is 0') end  
-  
   if monopipe==nil then return nil end
   monopipe.lock()  
   if monopipe==nil then return nil end
@@ -1389,75 +1386,6 @@ function mono_class_isgeneric(class)
   return result;
 end
 
-function mono_class_isEnum(klass)
- if not klass or klass==0 then return false end
- monopipe.lock()
- monopipe.writeByte(MONOCMD_ISCLASSENUM)
- monopipe.writeQword(klass)
- local retv = monopipe.readByte()
- monopipe.unlock()
- return retv==1
-end
-local function mono_classFindMethodByParameterCount(kls,mthdName,prmCount,prmName)
-  for k,v in pairs(mono_class_enumMethods(kls,1)) do
-    if v.name==mthdName then
-      local prms = mono_method_get_parameters(v.method)
-      if prmCount then
-        if #prms.parameters==prmCount then
-          if prmName then
-             for kk,vv in pairs(prms.parameters) do
-               if vv.name==prmName then return v end
-             end
-          else
-            return v
-          end
-        end
-      else
-        return v
-      end
-    end
-  end
-end
-
-function mono_class_IsPrimitive(klass)
-  local tp = mono_class_get_type(klass)
-  local rtp = mono_classtype_get_reflectiontype(tp)
-  if not rtp then LaunchMonoDataCollector(); error('Reflection type not found') end
-  local kls = mono_object_getClass(rtp)
-  local mtd = mono_classFindMethodByParameterCount(kls,'get_IsPrimitive')
-  assert(mtd and mtd.method~=0,'Error: method "Type.get_IsPrimitive" was nil')
-  mtd = mtd.method
-  local v = mono_invoke_method(nil,mtd,rtp,{})
-  return v==1
-end
-
-function mono_class_isValueType(klass)
- if not klass or klass==0 then return false end
- monopipe.lock()
- monopipe.writeByte(MONOCMD_ISCLASSVALUETYPE)
- monopipe.writeQword(klass)
- local retv = monopipe.readByte()
- monopipe.unlock()
- return retv==1
-end
-
-function mono_class_isStruct(klass)
- return mono_class_isValueType(klass) and not(mono_class_isEnum(klass)) and not(mono_class_IsPrimitive(klass))
-end
-
-function mono_class_isSubClassOf(klass,parentklass,checkInterfaces)
- checkInterfaces = checkInterfaces and 1 or 0
- if not klass or klass==0 then return false end
- monopipe.lock()
- monopipe.writeByte(MONOCMD_ISCLASSISSUBCLASSOF)
- monopipe.writeQword(klass)
- monopipe.writeQword(parentklass)
- monopipe.writeByte(checkInterfaces)
- local retv = monopipe.readByte()
- monopipe.unlock()
- return retv==1
-end
-
 function mono_isil2cpp(class)
   local result=false
   monopipe.lock()
@@ -1466,23 +1394,6 @@ function mono_isil2cpp(class)
 
   monopipe.unlock()
   return result
-end
-
-function mono_class_getNestedTypes(class)
-  local result={}
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETCLASSNESTEDTYPES)  
-  monopipe.writeQword(class)
-  local count=monopipe.readDword()
- 
-  for i=1,count do
-    result[i]=monopipe.readQword()
-  end
-
-  monopipe.unlock()
-  
-  return result
-  
 end
 
 
@@ -1595,122 +1506,19 @@ function mono_class_getImage(class)
   return result;   
 end
 
-function mono_ptr_class_get(fieldtype_or_ptrtype)
---returns the MonoType* object which is a pointer to the given type. Use "mono_class_getFullName" on the returned value to see the difference.
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETPTRTYPECLASS)
-  monopipe.writeQword(fieldtype_or_ptrtype)
-  local val = monopipe.readQword()
-  monopipe.unlock()
-  return val
-end
 
-function mono_field_get_type(monofield)
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETFIELDTYPE)
-  monopipe.writeQword(monofield)
-  local val = monopipe.readQword()
-  monopipe.unlock()
-  return val
-end
-
-function mono_type_get_ptr_type(ptrtype)
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETTYPEPTRTYPE)
-  monopipe.writeQword(ptrtype)
-  local val = monopipe.readQword()
-  monopipe.unlock()
-  return val
-end
-
-function mono_field_getClass(field)
+function mono_type_getClass(monotype)
   --if debug_canBreak() then return nil end
 
   local result=0
   monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETFIELDCLASS)
-  monopipe.writeQword(field)  
+  monopipe.writeByte(MONOCMD_GETTYPECLASS)
+  monopipe.writeQword(monotype)  
 
   result=monopipe.readQword()
 
   monopipe.unlock()
   return result;
-end
-
-function mono_type_getClass(field)
-  --ce <7.5.2
-  return mono_field_getClass(field)
-end
-
-function mono_class_get_type(kls)
-  if not kls or kls==0 then return nil end
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETCLASSTYPE)
-  monopipe.writeQword(kls)
-  local retv = monopipe.readQword()
-  monopipe.unlock()
- return retv
-end
-
-function mono_type_get_class(monotype)
-  if not monotype or monotype==0 then return nil end
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETCLASSOFTYPE)
-  monopipe.writeQword(monotype)
-  local retv = monopipe.readQword()
-  monopipe.unlock()
- return retv
-end
-
-function mono_type_get_type(monotype)
-  if not monotype or monotype==0 then return nil end
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETTYPEOFMONOTYPE)
-  monopipe.writeQword(monotype)
-  local retv = monopipe.readDword()
-  monopipe.unlock()
- return retv
-end
-
-function mono_type_is_byref(monotype)
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_TYPEISBYREF)
-  monopipe.writeQword(monotype)
-  local val = monopipe.readByte()
-  monopipe.unlock()
-  return val == 1
-end
-
-function mono_classtype_get_reflectiontype(monotype)
-  if not monotype or monotype==0 then return end
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETREFLECTIONTYPEOFCLASSTYPE)
-  monopipe.writeQword(monotype)
-  local retv = monopipe.readQword()
-  monopipe.unlock()
-  return retv
-end
-
-function mono_method_get_reflectiontype(method,klass)
-  assert(method,'Error: "method" was nil. It is supposed to be a MonoMethod*')
-  assert(klass,'Error: "klass" was nil. It is supposed to be a MonoClass*')
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETREFLECTIONMETHODOFMONOMETHOD)
-  monopipe.writeQword(method)
-  monopipe.writeQword(klass)
-  local retv = monopipe.readQword()
-  monopipe.unlock()
-  return retv
-end
-
-function mono_object_unbox(monoobject)
-  assert(monoobject,'Error: "monoobject" was nil. It is supposed to be a MonoObject*')
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_MONOOBJECTUNBOX)
-  monopipe.writeQword(monoobject)
-  local retv = monopipe.readQword()
-  monopipe.unlock()
-  return retv
 end
 
 function mono_class_getArrayElementClass(klass)
@@ -1758,54 +1566,10 @@ function mono_class_getVTable(domain, klass)
   return result  
 end
 
-local function GetInstancesOfClass(kls)
-  if getOperatingSystem()==0 then
-    local reskls = mono_findClass("UnityEngine","Resources")
-    local mthds = mono_class_enumMethods(reskls)
-    local fn
-    for k,v in pairs(mthds) do
-      if v.name == 'FindObjectsOfTypeAll' then
-        local prms = mono_method_get_parameters(v.method)
-        if #prms.parameters == 1 and prms.parameters[1].name=="type" then fn = v.method break end
-      end
-    end
-    if not fn then
-      reskls = mono_findClass("UnityEngine","Object")
-      mthds = mono_class_enumMethods(reskls)
-      for k,v in pairs(mthds) do
-        if v.name == 'FindObjectsOfType' then
-          local prms = mono_method_get_parameters(v.method)
-          if #prms.parameters == 1 and prms.parameters[1].name=="type" then fn = v.method break end
-        end
-      end
-      if not fn then return end
-    end
-    local sig = mono_method_getSignature(fn)
-    local klstype = mono_class_get_type(kls)
-    local reftype = mono_classtype_get_reflectiontype(klstype)
-    if not reftype or reftype==0 then return end
-    return mono_invoke_method(nil,fn,0,{{type=vtPointer,value=reftype}})
-  end
-
-end
-
 
 --todo for the instance scanner: Get the fields and check that pointers are either nil or point to a valid address
 function mono_class_findInstancesOfClassListOnly(domain, klass, progressBar)
-  local inst = GetInstancesOfClass(klass)
-  if inst and readPointer(inst) and readPointer(inst)~=0 then
-     local countoff =  targetIs64Bit() and 0x18 or 0xC
-     local elementsoff = targetIs64Bit() and 0x20 or 0x10
-     local elesize = targetIs64Bit() and 8 or 4
-     local arr = inst--readPointer(inst)
-     local count =readInteger(arr+countoff)
-     local result = {}
-     for i=0,count-1 do
-      result[#result+1] = readPointer(inst+i*elesize+elementsoff)
-     end
-     return result
-  end
-  
+
   if debugInstanceLookup then 
     if progressBar then
       printf("progressBar is set. progressBar.ClassName=%s", progressBar.ClassName)
@@ -2133,117 +1897,66 @@ function mono_class_getStaticFieldAddress(domain, class)
   return result;
 end
 
-function mono_object_enumValues(object)
---same as mono_class_enumFields but each field has a   a list of fields of the class that belongs to the class, and their value
-  local r={}
-  local c=mono_object_getClass(object)
-  if c then
-    local fields=mono_class_enumFields(c)
-    if fields then
-      local i
-      for i=1,#fields do
-        if not (fields[i].isStatic or fields[i].isConst) then
-          local reader=getDotNetValueReader(fields[i].monotype)
-          if reader then
-            local address=object+fields[i].offset
-            r[fields[i].name]=reader(address)
-          end          
-        end      
-      end 
-      return r  
-    end
-  end 
- 
-end
-
-function mono_class_enumFields(class, includeParents, expandedStructs)
-  local function GetFields(class, includeParents, expandedStructs, staticnoinclude)
-    local classfield;
-    local index=1;
-    local fields={}
-
-    if monopipe==nil then return fields end
+function mono_class_enumFields(class, includeParents)
+  --if debug_canBreak() then return nil end
 
 
-    if includeParents then
-      local parent=mono_class_getParent(class)
-      if (parent) and (parent~=0) then
-        fields=GetFields(parent, includeParents, expandedStructs);
-        index=#fields+1;
-      end
-    end
-
-
-    monopipe.lock()
-
-
-    --mono_class_getParent
-
-    monopipe.writeByte(MONOCMD_ENUMFIELDSINCLASS)
-    monopipe.writeQword(class)
-
-    repeat
-      classfield=monopipe.readQword()
-      if (classfield~=nil) and (classfield~=0) then
-        local namelength;
-        fields[index]={}
-        fields[index].field=classfield
-        fields[index].type=monopipe.readQword()
-        fields[index].monotype=monopipe.readDword()
-
-        fields[index].parent=monopipe.readQword()
-        fields[index].offset=monopipe.readDword()
-        fields[index].flags=monopipe.readDword()
-
-        fields[index].isStatic=(bAnd(fields[index].flags, bOr(FIELD_ATTRIBUTE_STATIC, FIELD_ATTRIBUTE_HAS_FIELD_RVA))) ~= 0 --check mono for other fields you'd like to test
-        fields[index].isConst=(bAnd(fields[index].flags, FIELD_ATTRIBUTE_LITERAL)) ~= 0
-
-        namelength=monopipe.readWord();
-        fields[index].name=monopipe.readString(namelength);
-
-        namelength=monopipe.readWord();
-        fields[index].typename=monopipe.readString(namelength);
-        if (staticnoinclude and fields[index].isStatic) then
-          fields[index] = nil
-        else
-          index=index+1
-        end
-        
-      end
-
-    until (classfield==nil) or (classfield==0)
-
-    if monopipe then
-      monopipe.unlock()
-    end
-
-    return fields
-  end
-  local mainFields = GetFields(class, includeParents, expandedStructs)
-  if expandedStructs then
-    for k,v in pairs(mainFields) do
-      local lockls = mono_field_getClass(v.field)
-      if not(v.isStatic or v.isConst) and mono_class_isStruct(lockls) and not(mono_class_isSubClassOf(lockls,class)) then --does not want to infinitely loop if the struct has some static member of the same class
-         local subFields = GetFields(lockls, includeParents, expandedStructs, true)
-         --print(v.name, v.typename, fu(v.monotype))
-         if #subFields >0 then
-            if subFields[1].offset == 0x10 then  --Not sure if also in 32 bit...
-               for kk,vv in pairs(subFields) do
-                   vv.offset = vv.offset-0x10+v.offset
-               end
-            end
-            subFields[1].name = mainFields[k].name..'.'..subFields[1].name
-            for i=2, #subFields do
-                subFields[i].name = mainFields[k].name..'.'..subFields[i].name
-                mainFields[#mainFields+1] = subFields[i]
-            end
-            mainFields[k] = subFields[1]
-         end
-      end
+  local classfield;
+  local index=1;
+  local fields={}
+  
+  if monopipe==nil then return fields end
+    
+  
+  if includeParents then
+    local parent=mono_class_getParent(class)
+    if (parent) and (parent~=0) then
+      fields=mono_class_enumFields(parent, includeParents);
+      index=#fields+1;      
     end
   end
+  
 
-  return mainFields
+  monopipe.lock()
+  
+  
+  --mono_class_getParent
+
+  monopipe.writeByte(MONOCMD_ENUMFIELDSINCLASS)
+  monopipe.writeQword(class)
+
+  repeat
+    classfield=monopipe.readQword()
+    if (classfield~=nil) and (classfield~=0) then
+      local namelength;
+      fields[index]={}
+      fields[index].field=classfield
+      fields[index].type=monopipe.readQword()
+      fields[index].monotype=monopipe.readDword()
+
+      fields[index].parent=monopipe.readQword()
+      fields[index].offset=monopipe.readDword()
+      fields[index].flags=monopipe.readDword()
+     
+      fields[index].isStatic=(bAnd(fields[index].flags, bOr(FIELD_ATTRIBUTE_STATIC, FIELD_ATTRIBUTE_HAS_FIELD_RVA))) ~= 0 --check mono for other fields you'd like to test
+      fields[index].isConst=(bAnd(fields[index].flags, FIELD_ATTRIBUTE_LITERAL)) ~= 0
+
+      namelength=monopipe.readWord();
+      fields[index].name=monopipe.readString(namelength);
+
+      namelength=monopipe.readWord();
+      fields[index].typename=monopipe.readString(namelength);
+      index=index+1
+    end
+
+  until (classfield==nil) or (classfield==0)
+
+  if monopipe then
+    monopipe.unlock()
+  end
+
+  return fields
+
 end
 
 function mono_class_enumMethods(class, includeParents)
@@ -2311,21 +2024,6 @@ function mono_class_enumMethods(class, includeParents)
   return methods
 end
 
-function mono_class_enumInterfaces(MonoClass)
-  if not MonoClass or MonoClass==0 then return {} end
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_ENUMINTERFACESOFCLASS)
-  monopipe.writeQword(MonoClass)
-  local retv = {}
-  local klass
-  repeat
-    klass = monopipe.readQword()
-    retv[#retv+1] = (klass and klass~=0) and klass or nil
-  until(not klass or klass==0)
-  monopipe.unlock()
-  return retv
-end
-
 function mono_getJitInfo(address)
   --if debug_canBreak() then return nil end
   
@@ -2365,15 +2063,13 @@ function mono_getStaticFieldValue(vtable, field)
   
   local r
   monopipe.lock()
+  monopipe.writeByte(MONOCMD_GETSTATICFIELDVALUE)
+  monopipe.writeQword(vtable)
+  monopipe.writeQword(field)
+  r=monopipe.readQword()
+  
   if monopipe then
-    monopipe.writeByte(MONOCMD_GETSTATICFIELDVALUE)
-    monopipe.writeQword(vtable)
-    monopipe.writeQword(field)
-    r=monopipe.readQword()
-    
-    if monopipe then
-      monopipe.unlock() 
-    end
+    monopipe.unlock() 
   end
 
   return r    
@@ -2513,10 +2209,6 @@ function mono_image_findClassSlow(image, namespace, classname)
   return result
 end
 
-function mono_splitClassAndNestedTypeNames(classname)
-  --takes a clasname formatted as xxxx+yyyy+zzzz and splits it into xxxx and yyyy
-end
-
 function mono_findClass(namespace, classname)
   --if debug_canBreak() then return nil end
 
@@ -2544,11 +2236,6 @@ function mono_findClass(namespace, classname)
   if ass==nil then return nil end
 
   local fullnamerequested=classname:find("+") ~= nil
-  
-  if fullnamerequested then
-    --there's a nested type specified
-  end
-  
   if fullnamerequested==false then
     for i=1, #ass do
       result=mono_image_findClass(mono_getImageFromAssembly(ass[i]), namespace, classname)
@@ -2695,17 +2382,6 @@ function mono_method_getName(method)
   return result;
 end
 
-function mono_method_getFullName(monomethod)
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETMETHODFULLNAME)
-  monopipe.writeQword(monomethod)
-  local namelength=monopipe.readWord()
-  local result=monopipe.readString(namelength)
-  monopipe.unlock()
-  return result or ''
-end
-
-
 function mono_method_getHeader(method)
   --if debug_canBreak() then return nil end
   if method==nil then return nil end
@@ -2755,12 +2431,10 @@ function mono_method_get_parameters(method)
   
   --types
   for i=1, paramcount do  
-    result.parameters[i].monotype=monopipe.readQword();
     result.parameters[i].type=monopipe.readDword(); 
   end
   
   --result  
-  result.returnmonotype = monopipe.readQword()
   result.returntype=monopipe.readDword()  
   
   monopipe.unlock()
@@ -2851,19 +2525,6 @@ function mono_method_getClass(method)
   monopipe.writeByte(MONOCMD_GETMETHODCLASS)
   monopipe.writeQword(method)
   local result=monopipe.readQword()
-
-  if monopipe then
-    monopipe.unlock()
-  end
-
-  return result;
-end
-
-function mono_method_getFlags(method)
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_GETMETHODFLAGS)
-  monopipe.writeQword(method)
-  local result=monopipe.readDword()
 
   if monopipe then
     monopipe.unlock()
@@ -2973,7 +2634,6 @@ end
 
 function mono_readObject()
   local vtype = monopipe.readByte()
-  --print(vtype)
   if vtype == MONO_TYPE_VOID then
     return monopipe.readQword()
   elseif vtype == MONO_TYPE_STRING then
@@ -2983,25 +2643,19 @@ function mono_readObject()
   
   local vartype = monoTypeToVartypeLookup[vtype]
   if vartype == vtByte then
-    return monopipe.readByte(),vtype
+    return monopipe.readByte()
   elseif vartype == vtWord then
-    return monopipe.readWord(),vtype
+    return monopipe.readWord()
   elseif vartype == vtDword then
-    return monopipe.readDword(),vtype
+    return monopipe.readDword()
   elseif vartype == vtQword then
-    return monopipe.readQword(),vtype
+    return monopipe.readQword()
   elseif vartype == vtSingle then
-    return monopipe.readFloat(),vtype
+    return monopipe.readFloat()
   elseif vartype == vtDouble then
-    return monopipe.readDouble(),vtype
+    return monopipe.readDouble()
   elseif vartype == vtPointer then
-    return monopipe.readQword(),vtype
-  else
-    if targetIs64Bit() then
-      return monopipe.readQword(),vtype
-    else
-      return monopipe.readDword(),vtype
-    end
+    return monopipe.readQword()
   end  
   return nil
 end
@@ -3123,7 +2777,7 @@ function mono_writeVarType(vartype)
   end
 end
 
-function mono_invoke_method_dialog(domain, method, address, OnResult, OnCreateInstance)
+function mono_invoke_method_dialog(domain, method, address)
   --spawn a dialog where the user can fill in fields like: instance and parameter values
   --parameter fields will be of the proper type
 
@@ -3133,15 +2787,6 @@ function mono_invoke_method_dialog(domain, method, address, OnResult, OnCreateIn
   local types, paramnames, returntype=mono_method_getSignature(method)
 
   if types==nil then return nil,'types==nil' end
-  
-  local parameters=mono_method_get_parameters(method)
-  
-  if parameters==nil then return nil,'invalid method. has no param info' end
-  
-
-  local flags=mono_method_getFlags(method)
-  local static=(flags & METHOD_ATTRIBUTE_STATIC) == METHOD_ATTRIBUTE_STATIC
-    
 
   local mifinfo
 
@@ -3159,242 +2804,109 @@ function mono_invoke_method_dialog(domain, method, address, OnResult, OnCreateIn
   if c and (c~=0) then
     classname=mono_class_getName(c)..'.'
   end
-  local methodname=classname..mono_method_getName(method)
-
   
   paramstrings={}
-  for i=1,#parameters.parameters do
-    paramstrings[i]={}
-    paramstrings[i].varname=typenames[i]..' '..paramnames[i]
-    paramstrings[i].isObject=parameters.parameters[i].type==MONO_TYPE_VALUETYPE or parameters.parameters[i].type==MONO_TYPE_BYREF or parameters.parameters[i].type==MONO_TYPE_OBJECT
+  for i=1,#typenames do
+    paramstrings[i]=typenames[i]..' '..paramnames[i]
   end
-
   
-
-  local invokeDialogParams={}
-  invokeDialogParams.name=methodname
-  invokeDialogParams.isStatic=static
-  invokeDialogParams.address=address
-  invokeDialogParams.allowCustomAddress=true
-  invokeDialogParams.parameters=paramstrings  
-  invokeDialogParams.nonmodal=OnResult~=nil  
-  
-  
-  local function OkClickHandler(dialog, idp, output)     
-    --ok button clicked (called by the dialog on OK, or when the dialog closes with OK and it's modal)
+  mifinfo=createMethodInvokedialog(classname..mono_method_getName(method), paramstrings, function()
+    --ok button click
+    local instance=getAddressSafe(mifinfo.cbInstance.Text)
     
-    local instance=invokeDialogParams.address
-    local params=parameters    
+    if instance==nil then
+      instance=tonumber(mifinfo.cbInstance.Text)
+    end
+
+    if instance==nil then
+      messageDialog(mifinfo.cbInstance.Text..translate(' is not a valid address'), mtError, mbOK)
+      return
+    end
+
+    local params=mono_method_get_parameters(method)
+    if params==nil then
+      return
+    end
 
     --use monoTypeToVartypeLookup to convert it to the type mono_method_invoke likes it
     local args={}
-    for i=1, #parameters.parameters do
-    
+    for i=1, #params.parameters do
       args[i]={}
-      args[i].type=monoTypeToVartypeLookup[parameters.parameters[i].type]
-      if parameters.parameters[i].type==MONO_TYPE_STRING then
-        args[i].type=vtString
-        args[i].value=invokeDialogParams.parameters[i].value --handle strings (which are actually pointers to string objects) specially
-      elseif args[i].type==vtPointer then
-       --accept hexadecimal strings and strings like '{xxx=123,yyy=456}'
-        local input=invokeDialogParams.parameters[i].value
-        if input:startsWith('0x') then input=input:sub(3) end
-     
-        local v=tonumber(input,16)
-        if v==nil then
-          --not a number
-          local valf=loadstring('return '..invokeDialogParams.parameters[i].value)
-          if valf==nil then --perhaps the user forgot the { }
-            valf=loadstring('return {'..invokeDialogParams.parameters[i].value..'}')
-          end
-          if valf then
-            args[i].value=valf()
-          end
-        else
-          args[i].value=v
-        end
+      args[i].type=monoTypeToVartypeLookup[params.parameters[i].type]
+      if args[i].type==vtString then
+        args[i].value=mifinfo.parameters[i].edtVarText.Text
       else
-        args[i].value=tonumber(invokeDialogParams.parameters[i].value)
+        args[i].value=tonumber(mifinfo.parameters[i].edtVarText.Text)
       end
-    
-
 
       if args[i].value==nil then
-        messageDialog(translate('parameter ')..i..': "'..invokeDialogParams.parameters[i].value..'" '..translate('is not a valid value'), mtError, mbOK)
+        messageDialog(translate('parameter ')..i..': "'..mifinfo.parameters[i].edtVarText.Text..'" '..translate('is not a valid value'), mtError, mbOK)
         return
       end
     end
     
-    --DEBUG: global vars for debug
-    _d,_m,_i,_args=domain, method, instance, args
-    r,_secondary, vtype=mono_invoke_method(domain, method, instance, args)
-    local hrs=nil --human readable string
+    _G.args=args
+    _G.instance=instance
+    _G.method=method
+    _G.bla=123
+    
+    local r=mono_invoke_method(domain, method, instance, args)
     if r then
-      if type(r)=='table' then --it returned a table instead of value
-        --it's for human eyes so sort by varname
-        local sorted={}
-        for varname, value in pairs(r) do
-          local e={}
-          e.varname=varname
-          e.value=value
-          table.insert(sorted, e)
-        end
-        table.sort(sorted,function(a,b) return a.varname<b.varname end)
-        --construct a string readable for the user
-        
-        local s
-        s='{'
-        for i=1,#sorted do          
-          if i~=1 then s=s..', ' end            
-          s=s..string.format("%s=%s", sorted[i].varname, sorted[i].value)
-        end
+      print('Method returned: '..r)
+    end    
+  end, true)
+  
+  --start a scan to fill the combobox with results
+  if (address==nil) then
+    mifinfo.cbInstance.Items.add(translate('<Please wait...>'))
+    mono_class_findInstancesOfClass(nil,c,function(m)      
+        --print("Scan done")
 
-        s=s..'}'
-        hrs=s   
-      else      
-        if readByte(r) then          
-          hrs=string.format('%s returned: 0x%x', methodname, r)
-        else
-          hrs=string.format('%s returned: %s', methodname, r)
-        end
-      end
-    end     
-      
-    if OnResult then   
-      --print("OnResult is set")    
-      if r and vtype and hrs and hrs~='' then
-       -- print("r and vtype and hrs and hrs~='' ")
-        --add the result to the output object
-        if output then         
-          if getTimeStamp then --being nice to older CE users...
-            hrs=getTimeStamp()..' - '..hrs
-          else
-            hrs=os.date("%H:%M:%S")..' - '..hrs          
+        if mifinfo.cbInstance then  --not destroyed yet
+          mifinfo.cbInstance.Items.clear()
+        
+          local fl=createFoundList(m) 
+          fl.initialize()
+          local i
+          for i=0, fl.Count-1 do
+            mifinfo.cbInstance.Items.Add(fl[i])
           end
-          output.insert(0,hrs)
           
-        else
-         -- print("output==nil")
-        end
+          fl.destroy()
+        end      
+        
+        m.destroy()
       end
-      OnResult(r, _secondary, vtype, hrs)
-    else            
-      return r,_secondary, vtype, hrs      
-    end   
+    )
+  else
+    mifinfo.cbInstance.Text=string.format('%x',address)
   end
   
-  if invokeDialogParams.nonmodal then
-    invokeDialogParams.onOKClick=OkClickHandler    
-  end
-  
-  if OnCreateInstance then
-    invokeDialogParams.onCreateInstanceClick=function(dialog, idp, paramindex)
-      printf("creating instance of param "..paramindex)
-       
-      local classhandle=mono_type_get_class(parameters.parameters[paramindex].monotype)
-      local r=OnCreateInstance(classhandle)
-      
-      printf("OnCreateInstance returned %s", r)
-      return r
-    end
-  end
-  
-  local r
-  r=createMethodInvokeDialog(invokeDialogParams)
-  if OnResult then return end
-  
-  if r then
-    return OkClickHandler()
-  end
+  mifinfo.mif.show()
 end
 
 
 function mono_invoke_method(domain, method, object, args)
-
-  local parameters=mono_method_get_parameters(method).parameters
-  if parameters==nil then    
-    return nil,'Parameter lookup failed'
-  end  
-  
-  if object and object~=0 then
-    local class=mono_method_getClass(method)
-    if mono_type_get_type(mono_class_get_type(class))==MONO_TYPE_VALUETYPE then
-      --the object needs to be unboxed to be able to be used
-      object=mono_object_unbox(object)
-    end
-  end
-
-  
-  
-  for i=1, #args do
-    if type(args[i])~='table' or args[i].type==nil or args[i].value==nil then
-      --argument isn't in the {type,value} format  
-      --Try figuring out what the type is by looking at the method info
-
-   
-      local newarg={}
-    
-      newarg.type=monoTypeToVarType(parameters[i].type)
-      newarg.value=args[i]
-    
-      if newarg.type==vtPointer and type(newarg.value)=='table' then
-        local class=mono_type_get_class(parameters[i].monotype)   
-        if class then
-          --create an instance of this class with the fields setup as in the given table  (e.g input is {x=12,y=13,z=14}
-          local o=mono_object_new(class)
-          --todo: if o then
-          -- call the constructor without params, and fill in the fields
-          
-          newarg.value=o
-        end
-        
-        args[i]=newarg
-      end
-    end 
-
-    --if type is MONO_TYPE_VALUETYPE then unbox the object
-    if parameters[i].type==MONO_TYPE_VALUETYPE then
-      args[i].value=mono_object_unbox(args[i].value)
-    end
-          
-  end
-
   monopipe.lock()
   monopipe.writeByte(MONOCMD_INVOKEMETHOD)
   
+ -- monopipe.writeQword(domain)
   monopipe.writeQword(method)
   monopipe.writeQword(object)
-  
-  for i=1, #args do 
+  --monopipe.writeWord(#args)
+ -- for i=1, #args do
+    --mono_writeVarType(args[i].type)
+  --end
+  for i=1, #args do
     mono_writeObject(args[i].type, args[i].value)
   end
   
-  local result, vtype =mono_readObject()
-  --print(type(result),result)
+  local result=mono_readObject()
+  
   if monopipe then
-    local exception = nil
-    if monopipe.readByte() == 1 then
-      if monopipe.readByte() == 1 then
-        local excplen = monopipe.readWord()
-        exception = monopipe.readString(excplen)
-      end
-    end
     monopipe.unlock()
-    
-    if vtype==MONO_TYPE_VALUETYPE then
-      --read the fields from this type and return that instead
-      local f=mono_object_enumValues(result)
- 
-      if f then
-        return f, exception, vtype
-      end
-    --  local 
-      
-      
-    end
-    return result, exception, vtype      
+    return result      
   else
-   
     --something bad happened
     LaunchMonoDataCollector()
     return nil
@@ -3548,33 +3060,6 @@ function monoform_miGetILCodeClick(sender)
   end
 end
 
-function mono_array_element_size(arrayKlass)
-  if not arrayKlass or arrayKlass==0 then return 0 end
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_ARRAYELEMENTSIZE)
-  monopipe.writeQword(arrayKlass)
-  local retv = monopipe.readQword()
-  if monopipe then
-    monopipe.unlock()
-  else
-    return 0
-  end
-  return retv
-end
-
-function mono_array_new(klass,count)
-  count = count and count or 0
-  assert(klass and klass~=0,'Error: The Element class for array must be defined')
-  monopipe.lock()
-  monopipe.writeByte(MONOCMD_MONOARRAYNEW)
-  monopipe.writeQword(klass)
-  monopipe.writeDword(count)
-  local retv = monopipe.readQword()
-  monopipe.unlock()
-  return retv
-end
-
-
 function monoform_miDissectShowStruct(s, address)
   if s then
     --show it
@@ -3682,6 +3167,9 @@ function monoform_createInstanceOfClass(sender)
     end  
   end  
 end
+
+
+
 
 --[[
 function monoform_miCreateObject(sender)
@@ -4288,15 +3776,7 @@ end
 
 function miMonoActivateClick(sender)
   if monopipe then
-    if isKeyPressed(VK_CONTROL) then
-    monopipe.lock()
-    monopipe.writeByte(MONOCMD_TERMINATE)
-    monopipe.unlock()
     monopipe.OnTimeout()
-    print('dll ejected')
-    else
-    monopipe.OnTimeout()
-    end
   else  
     if LaunchMonoDataCollector()==0 then
       showMessage(translate("Failure to launch  "))
@@ -4323,33 +3803,33 @@ function mono_setMonoMenuItem(usesmono, usesdotnet)
     
     
     if (miMonoTopMenuItem==nil) then
-      local mfm=MainForm.Menu
+      local mfm=getMainForm().Menu
       
       if mfm then
         local mi
-        miMonoTopMenuItem=createMenuItem(MainForm)
+        miMonoTopMenuItem=createMenuItem(mfm)
        
         mfm.Items.insert(mfm.Items.Count-1, miMonoTopMenuItem) --add it before help
 
-        mi=createMenuItem(MainForm)
+        mi=createMenuItem(miMonoTopMenuItem)
         mi.Caption=translate("Activate mono features")
         mi.OnClick=miMonoActivateClick
         mi.Name='miMonoActivate'
         miMonoTopMenuItem.Add(mi)
 
-        mi=createMenuItem(MainForm)
+        mi=createMenuItem(miMonoTopMenuItem)
         mi.Caption=translate("Dissect mono")
         mi.Shortcut="Ctrl+Alt+M"
         mi.OnClick=miMonoDissectClick
         mi.Name='miMonoDissect'
         miMonoTopMenuItem.Add(mi)
         
-        mi=createMenuItem(MainForm)
+        mi=createMenuItem(miMonoTopMenuItem)
         mi.Caption="-" 
         mi.Name="miDotNetSeperator"
         miMonoTopMenuItem.Add(mi)        
         
-        mi=createMenuItem(MainForm)
+        mi=createMenuItem(miMonoTopMenuItem)
         mi.Caption=translate(".Net Info")
         mi.Shortcut="Ctrl+Alt+N"
         mi.OnClick=miDotNetInfoClick
@@ -4358,23 +3838,23 @@ function mono_setMonoMenuItem(usesmono, usesdotnet)
         
         
         miMonoTopMenuItem.OnClick=function(s)
-          MainForm.miMonoActivate.Checked=monopipe~=nil
+          miMonoTopMenuItem.miMonoActivate.Checked=monopipe~=nil
         end
       end
     end
     
     if miMonoTopMenuItem then
-      MainForm.miMonoActivate.Visible=true
-      MainForm.miMonoDissect.Visible=true
-      MainForm.miDotNetSeperator.Visible=true
+      miMonoTopMenuItem.miMonoActivate.Visible=true
+      miMonoTopMenuItem.miMonoDissect.Visible=true
+      miMonoTopMenuItem.miDotNetSeperator.Visible=true
         
       if usesmono and not usesdotnet then
         miMonoTopMenuItem.Caption=translate("Mono")
       elseif usesdotnet and not usesmono then  
         miMonoTopMenuItem.Caption=translate(".Net")
-        MainForm.miMonoActivate.Visible=false
-        MainForm.miMonoDissect.Visible=false      
-        MainForm.miDotNetSeperator.Visible=false
+        miMonoTopMenuItem.miMonoActivate.Visible=false
+        miMonoTopMenuItem.miMonoDissect.Visible=false      
+        miMonoTopMenuItem.miDotNetSeperator.Visible=false
       else
         miMonoTopMenuItem.Caption=translate("Mono/.Net")     
       end
@@ -4386,8 +3866,8 @@ function mono_setMonoMenuItem(usesmono, usesdotnet)
   if (not usesmono) and (not usesdotnet) then  
     --destroy the menu item if needed
     if miMonoTopMenuItem~=nil then
-      MainForm.miMonoDissect.destroy() --clean up the onclick handler
-      MainForm.miMonoActivate.destroy()  --clean up the onclick handler
+      miMonoTopMenuItem.miMonoDissect.destroy() --clean up the onclick handler
+      miMonoTopMenuItem.miMonoActivate.destroy()  --clean up the onclick handler
       
       miMonoTopMenuItem.destroy() --also destroys the subitems as they are owned by this menuitem
       miMonoTopMenuItem=nil
@@ -4418,10 +3898,9 @@ end
 
 function mono_checkifmonoanyhow(t)
   while t.Terminated==false do
-    local r=getAddressSafe('mono_thread_attach',false,true)
-    local r2=getAddressSafe('il2cpp_thread_attach',false,true)
+    local r=getAddressSafe('mono_thread_attach')
     
-    if (r~=nil) or (r2~=nil) then
+    if r~=nil then
       --print("thread_checkifmonoanyhow found the mono_thread_attach export")
       thread_checkifmonoanyhow=nil
       synchronize(mono_setMonoMenuItem, true)
@@ -4443,12 +3922,13 @@ function mono_OpenProcessMT()
   local i
   for i=1, #m do
    -- print(m[i].Name)
-    if (m[i].Name=='mono.dll') or (string.sub(m[i].Name,1,5)=='mono-') or (string.sub(m[i].Name,1,7)=='libmono') or (string.sub(m[i].Name,1,9)=='libil2cpp') or (m[i].Name=='GameAssembly.dll') or (m[i].Name=='UnityPlayer.dll')  then
+    if (m[i].Name=='mono.dll') or (string.sub(m[i].Name,1,5)=='mono-') or (string.sub(m[i].Name,1,7)=='libmono') or (m[i].Name=='GameAssembly.dll') or (m[i].Name=='UnityPlayer.dll')  then
+      
       usesmono=true
-    end   
-    
+    end
     
     if (m[i].Name=='clr.dll') or (m[i].Name=='coreclr.dll') or (m[i].Name=='clrjit.dll') then
+
       usesdotnet=true
     end    
   end
@@ -4794,65 +4274,31 @@ end
 
 mono_StringStruct=nil
   
-function monofrom_addPointerStructure(parentstructure, thiselement, field, recursive, static, structmap, loopnumber)
-  --This function will add sub-strutures to the fields that are c Pointers
-  --to disable, set " monoSettings.Value["MaxPointerChildStructs"] = "" "
-  assert(field.monotype==MONO_TYPE_PTR, 'Error: WAIT! How did I end up here!?')
-  local kls = mono_field_getClass(field.field)
-  if not kls or not readPointer(kls) then return end
-  kls = mono_class_get_type(kls)
-  kls = mono_type_get_ptr_type(kls)
-  if not kls or not readPointer(kls) then return end
-  local pat = mono_type_get_type(kls)
-  kls = mono_type_get_class(kls)
-  kls = pat==MONO_TYPE_GENERICINST and mono_class_getParent(kls) or kls
-  if not kls or not readPointer(kls) then return end
-  local subflds = mono_class_enumFields(kls,1)
-  if #subflds==0 then return end
-  local subofst; -- the offset of very first non-static, non-const field needs to be subtracted from similar fields
-  for k,v in ipairs(subflds) do
-    if not v.isStatic and not v.isConst then
-      subofst = subofst or v.offset
-      break
-    end
-  end
-  local structure = createStructure("")
-  monoform_exportStructInternal(structure, kls, recursive, static, structmap, nil, subofst, loopnumber-1)
-  print(structure.Count, field.name)
-  if structure.Count > 0 then
-    thiselement.ChildStruct = structure
-    thiselement.ChildStructStart = 0
-  else
-    structure.destroy()
-  end
-  --print(#subflds, subflds[1].offset,mono_class_getFullName(kls), mono_class_getFullName(mono_field_getClass(field.field)))
-end
-
-function monoform_exportStructInternal(s, caddr, recursive, static, structmap, makeglobal, minusoffset, loopnumber)
-  --print("monoform_exportStructInternal")
-  if not(tonumber(monoSettings.Value["MaxPointerChildStructs"])) then
-    monoSettings.Value["MaxPointerChildStructs"] = "2"
-  end
+function monoform_exportStructInternal(s, caddr, recursive, static, structmap, makeglobal)
+ -- print("monoform_exportStructInternal")
 
   if (monopipe==nil) or (caddr==0) or (caddr==nil) then return nil end
 
+ -- print("b")
+  
   local className = mono_class_getFullName(caddr)
   --print('Populating '..className)
+  
+  -- handle Array as separate case
 
   if string.sub(className,-2)=='[]' then
     local elemtype = mono_class_getArrayElementClass(caddr)
     return monoform_exportArrayStructInternal(s, caddr, elemtype, recursive, structmap, makeglobal, true)
   end
-  minusoffset = minusoffset or 0
 
+  
   local hasStatic = false
   structure_beginUpdate(s)
-
-  local fields=mono_class_enumFields(caddr,true,true)
+  
+  local fields=mono_class_enumFields(caddr,true)
   local str -- string struct
   local childstructs = {}
   local i
-  --print(#fields)
   for i=1, #fields do
     hasStatic = hasStatic or fields[i].isStatic
 
@@ -4862,33 +4308,28 @@ function monoform_exportStructInternal(s, caddr, recursive, static, structmap, m
       local fieldname = monoform_escapename(fields[i].name)
       if fieldname~=nil then
         e.Name=fieldname
-      end
-      e.Offset=fields[i].offset - minusoffset
-      e.Vartype=mono_class_isEnum(mono_field_getClass( fields[i].field )) and vtDword or monoTypeToVarType(ft)
+      end        
+      e.Offset=fields[i].offset
+      e.Vartype=monoTypeToVarType(ft)
+            
       --print(string.format("  Field: %d: %d: %d: %s", e.Offset, e.Vartype, ft, fieldname))
 
-      loopnumber = loopnumber or tonumber(monoSettings.Value["MaxPointerChildStructs"])
-      if ft==MONO_TYPE_STRING or ft==MONO_TYPE_CHAR then
-        --e.Vartype=vtUnicodeString
-        e.Bytesize = 999
-      elseif ft == MONO_TYPE_PTR and loopnumber > 0 then
-        monofrom_addPointerStructure(s, e, fields[i], recursive, static, structmap, loopnumber)
---[[        e.Vartype=vtPointer
+      if ft==MONO_TYPE_STRING then
 --print(string.format("  Field: %d: %d: %d: %s", e.Offset, e.Vartype, ft, fieldname))
 
          if mono_StringStruct==nil then
          --  print("Creating string object")
 
            mono_StringStruct = createStructure("String")
-
+           
            mono_StringStruct.beginUpdate()
            local ce=mono_StringStruct.addElement()
            ce.Name="Length"
            if targetIs64Bit() then
              ce.Offset=0x10
-       else
-       ce.Offset=0x8
-       end
+	   else
+             ce.Offset=0x8
+	   end
 
            ce.Vartype=vtDword
            ce=mono_StringStruct.addElement()
@@ -4896,21 +4337,21 @@ function monoform_exportStructInternal(s, caddr, recursive, static, structmap, m
            if targetIs64Bit() then
              ce.Offset=0x14
            else
-             ce.Offset=0xC
+             ce.Offset=0xC 
            end
            ce.Vartype=vtUnicodeString
            ce.Bytesize=128
            mono_StringStruct.endUpdate()
-           --mono_StringStruct.addToGlobalStructureList()
+           mono_StringStruct.addToGlobalStructureList()
          end
          e.setChildStruct(mono_StringStruct)
-
-      elseif ft == MONO_TYPE_PTR or ft == MONO_TYPE_CLASS or ft == MONO_TYPE_BYREF
+--[[
+      elseif ft == MONO_TYPE_PTR or ft == MONO_TYPE_CLASS or ft == MONO_TYPE_BYREF 
           or ft == MONO_TYPE_GENERICINST then
         --print("bla")
         local typename = monoform_escapename(fields[i].typename)
         if typename ~= nil then
-          local typeval = mono_field_getClass(fields[i].field)
+          local typeval = mono_type_getClass(fields[i].field)
           --print(string.format("PTR: %X: %s", typeval, typename))
           cs = monoform_exportStruct(typeval, typename, recursive, false, structmap, makeglobal)
           if cs~=nil then e.setChildStruct(cs) end
@@ -4918,14 +4359,14 @@ function monoform_exportStructInternal(s, caddr, recursive, static, structmap, m
       elseif ft == MONO_TYPE_SZARRAY then
         --print("bla2")
         local typename = monoform_escapename(fields[i].typename)
-        local arraytype = mono_field_getClass(fields[i].field)
+        local arraytype = mono_type_getClass(fields[i].field)
         local elemtype = mono_class_getArrayElementClass(arraytype)
-  --print(typename)
+	--print(typename)
 
         --local acs = monoform_exportArrayStruct(arraytype, elemtype, typename, recursive, static, structmap, makeglobal, false)
         --if acs~=nil then e.setChildStruct(acs) end --]]
       end
-
+    
     end
   end
 
@@ -4945,53 +4386,7 @@ function monoform_exportArrayStruct(arraytype, elemtype, typename, recursive, st
   return monoform_exportArrayStructInternal(acs, arraytype, elemtype, recursive, structmap, makeglobal, reload)  
 end
 
-function mono_structfields_getStartOffset(fields)
-  --this function get the first non-static, non-const field and gets its offset to subtract from all the offsets of fields
-  --this is done since structs as a memeber element in a class are not pointers, rather simple values!
-  for k,v in pairs(fields) do
-    if not(v.isConst) and not(v.isStatic) then
-      return v.offset
-    end
-  end
-end
-
-function monoform_addCSStructElements(structure, klass, parentstructname, offsetInStructure, prename, postname, preklassName, postClassName)
-  parentstructname = type(parentstructname)=='string' and #parentstructname>0 and parentstructname..'.' or ''
-  offsetInStructure = tonumber(offsetInStructure) or 0 --for arrays of the same struct
-  prename = prename or "" --the text to add before the name of the element
-  postname = postname or "" --text to add after the name of the element
-  preklassName = preklassName or "" --the text to add before the klassname (in paranthesis) of the element
-  postklassName = postklassName or "" --text to add after the klassname (in paranthesis) of the element
-
-  local subfield = mono_class_enumFields(klass)
-  local suboffset = mono_structfields_getStartOffset(subfield)
-  if not suboffset then
-    suboffset = targetIs64Bit() and 0x10 or 0x8
-  end
-  for k,v in pairs(subfield) do
-    if not(v.isConst) and not(v.isStatic) then
-      local fieldClass = mono_field_getClass( v.field )
-      local klsname = mono_class_getName(fieldClass)
-      local eloffset = offsetInStructure+v.offset-suboffset
-      if mono_class_isStruct(fieldClass) then
-        monoform_addCSStructElements(structure, fieldClass, v.name, eloffset, prename, postname, klsname..'.')
-      else
-        local nm = v.name..'('..preklassName..klsname..postklassName..')'
-        local ce=structure.addElement()
-        ce.Name=string.format("%s%s%s",prename,parentstructname..nm,postname)
-        ce.Offset=eloffset
-        ce.Vartype= mono_class_isEnum(fieldClass) and vtDword or monoTypeToVarType( v.monotype ) --vtPointer
-        if ce.Vartype == vtDword then
-          ce.DisplayMethod = 'dtSignedInteger'
-        end
-      end
-    end
-  end
-end
-
 function monoform_exportArrayStructInternal(acs, arraytype, elemtype, recursive, structmap, makeglobal, reload)
-  --print("monoform_exportArrayStructInternal")
-  --print(fu(arraytype),mono_class_getFullName(arraytype))
   if acs~=nil then
     cs = monoform_exportStruct(elemtype, nil, recursive, false, structmap, makeglobal)
     if cs~=nil and reload then
@@ -5005,36 +4400,29 @@ function monoform_exportArrayStructInternal(acs, arraytype, elemtype, recursive,
       end
       ce.Vartype=vtDword
       ce.setChildStruct(cs)
-
+      
       local j
-      local psize = arraytype and mono_array_element_size(arraytype) or nil
-      psize = psize and psize or (targetIs64Bit() and 8 or 4)
-
-      local start
+      local psize
       if targetIs64Bit() then
-        start=0x20
+        psize=8
       else
-        start=0x10
+        psize=4
       end
-      local elementkls = mono_class_getArrayElementClass(arraytype)
-      local elementmonotype = mono_type_get_type(mono_class_get_type(elementkls))
-      local isStruct = mono_class_isStruct(elementkls)--mono_class_isValueType(elementkls) and not(mono_class_IsPrimitive(elementkls)) and not(mono_class_isEnum(elementkls))
-      --print(fu(elementkls),mono_class_getFullName(elementkls),fu(elementmonotype))
-      if isStruct  then
-         --print("yep, a struct")
-         for j=0, 9 do -- Arbitrarily add 10 elements
-           monoform_addCSStructElements(acs, elementkls, "", j*psize+start, '['..j..']', "")
-         end
-      else
-        for j=0, 9 do -- Arbitrarily add 10 elements
-          ce=acs.addElement()
-          ce.Name=string.format("[%d]%s",j,mono_class_getName(elementkls))
-          ce.Offset=j*psize+start
-          ce.Vartype= monoTypeToVarType( elementmonotype ) --vtPointer
-    if ce.Vartype == vtDword then
-      ce.DisplayMethod = 'dtSignedInteger'
-    end
+ 	
+      for j=0, 9 do -- Arbitrarily add 10 elements
+        ce=acs.addElement()
+        ce.Name=string.format("Item[%d]",j)
+        
+        local start
+        if targetIs64Bit() then
+          start=0x20
+        else
+          start=0x10
         end
+          
+        ce.Offset=j*psize+start
+        ce.Vartype=vtPointer
+        ce.setChildStruct(cs)
       end
       structure_endUpdate(acs)
     end

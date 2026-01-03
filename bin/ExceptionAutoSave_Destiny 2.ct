@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CheatTable niggasbrokeTableVersion="45">
+  <CheatEntries>
+    <CheatEntry>
+      <ID>0</ID>
+      <Description>"No description"</Description>
+      <ShowAsHex>1</ShowAsHex>
+      <VariableType>Array of byte</VariableType>
+      <ByteLength>41</ByteLength>
+      <Address>destiny2.exe+A6DF63</Address>
+    </CheatEntry>
+  </CheatEntries>
+  <UserdefinedSymbols/>
+  <Comments>Info about this table:
+</Comments>
+</CheatTable>

@@ -139,7 +139,7 @@ begin
     try
       if not dontinclude.checked then
       begin
-        f.WriteBuffer(pchar('CHEATENGINE')^,11);
+        f.WriteBuffer(pchar('parsontools')^,11);
         temp:=3; //version
         f.WriteBuffer(temp,4);
       end;

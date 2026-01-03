@@ -1,8 +1,4 @@
 --dotnetinfo is a passive .net query tool, but it can go to a active state if needed
-if dotNetInfo==nil then
-  dotNetInfo={}
-end
-
 
 if getTranslationFolder()~='' then
   loadPOFile(getTranslationFolder()..'dotnetinfo.po')
@@ -46,60 +42,14 @@ local ELEMENT_TYPE_U          = 0x19
 
 local frmDotNetInfos={} --keep track of the windows
 
-settings={}
-settings.s=getSettings('dotnetinfo',true)
-settings.ColorPublic=tonumber(settings.s['ColorPublic']) or clGreen
-settings.ColorPrivate=tonumber(settings.s['ColorPrivate']) or clRed
-settings.ColorMixed=tonumber(settings.s['ColorMixed']) or clOrange
-settings.ColorStaticBackground=tonumber(settings.s['StaticBackground']) or clAqua
 
-
-
-frmDotNetInfoConfig=nil
-
-local function SpawnConfigDialog()
-  if frmDotNetInfoConfig==nil then
-    frmDotNetInfoConfig=createFormFromFile(getAutorunPath()..'forms'..pathsep..'DotNetInfoConfig.FRM')
-    frmDotNetInfoConfig.registerFirstShowCallback(function(f)
-      f.cbPublic.Width=f.Canvas.getTextWidth("XXXXXXXXXXXX")
-      f.cbPrivate.Width=f.cbPublic.Width
-      f.cbMixed.Width=f.cbPublic.Width
-
-      f.cbPublic.ItemHeight=f.Canvas.getTextHeight("qjX")
-      f.cbPrivate.ItemHeight=f.cbPublic.ItemHeight
-      f.cbMixed.ItemHeight=f.cbPublic.ItemHeight
-
-      frmDotNetInfoConfig.cbStaticBackground.ItemHeight=f.cbPublic.ItemHeight
-    end)
-  end
-  
-  frmDotNetInfoConfig.cbPrivate.selected=settings.ColorPrivate
-  frmDotNetInfoConfig.cbPublic.selected=settings.ColorPublic
-  frmDotNetInfoConfig.cbMixed.selected=settings.ColorMixed
-  frmDotNetInfoConfig.cbStaticBackground.selected=settings.ColorStaticBackground
-  frmDotNetInfoConfig.OnShow=function()
-  
-  end
-  if frmDotNetInfoConfig.showModal()==mrOK then
-    settings.ColorPublic=frmDotNetInfoConfig.cbPublic.selected
-    settings.ColorMixed=frmDotNetInfoConfig.cbMixed.selected
-    settings.ColorPrivate=frmDotNetInfoConfig.cbPrivate.selected
-    settings.ColorStaticBackground=frmDotNetInfoConfig.cbStaticBackground.selected
-    
-    settings.s['ColorPublic']=settings.ColorPublic
-    settings.s['ColorPrivate']=settings.ColorPrivate
-    settings.s['ColorMixed']=settings.ColorMixed
-    settings.s['ColorStaticBackground']=settings.ColorStaticBackground
-  end
-end
-
-local function AccessMaskToColor(AccessMask)
+local function AccessMaskToColor(AccessMask) --todo: userdefined colors
   if AccessMask==FIELD_ATTRIBUTE_PUBLIC then       
-    return settings.ColorPublic
+    return clGreen
   elseif (AccessMask==FIELD_ATTRIBUTE_PRIVATE) then
-    return settings.ColorPrivate
+    return clRed
   else
-    return settings.ColorMixed
+    return clOrange
   end
 end
 
@@ -180,9 +130,6 @@ local function getClassMethods(Class)
         e.Name=methods[i].name
         e.Class=Class
         e.Attribs=methods[i].flags
-        e.Static=(e.Attribs & METHOD_ATTRIBUTE_STATIC) == METHOD_ATTRIBUTE_STATIC
-        
-        
         
         --e.Parameters=getParameterFromMethod(e.Handle)    
         local types,paramnames,returntype=mono_method_getSignature(e.Handle)        
@@ -231,7 +178,6 @@ local function getClassMethods(Class)
         e.ILCode=methods[i].ILCode
         e.NativeCode=methods[i].NativeCode
         e.Attribs=methods[i].Attributes
-        e.Static=(e.Attribs & METHOD_ATTRIBUTE_STATIC) == METHOD_ATTRIBUTE_STATIC
         
 
         --build parameter list
@@ -286,7 +232,7 @@ local function getClassFields(Class)
       StaticFieldAddress=mono_class_getStaticFieldAddress(0,Class.Handle)
     end
          
-    local fields=mono_class_enumFields(Class.Handle, true, true)
+    local fields=mono_class_enumFields(Class.Handle, true)
     for i=1,#fields do
       local e={}
       e.Handle=fields[i].field
@@ -348,24 +294,22 @@ local function getClasses(Image)
     print("getClasses Error: Image.Classes was not busy")
     return
   end 
-  
-
 
   --get the classlist
   local i
   if (Image.Domain.Control==CONTROL_MONO) then
-    local classlist=mono_image_enumClassesEx(Image.Handle)
+    local classlist=mono_image_enumClasses(Image.Handle)        
     if classlist then         
       for i=1,#classlist do
         local e={}        
-        e.NestingTypeHandle=classlist[i].NestingTypeHandle        
+        e.NestingTypeHandle=mono_class_getNestingType(classlist[i].class)
         if e.NestingTypeHandle==0 then e.NestingTypeHandle=nil end   
         
-        e.Name=classlist[i].Name
-        e.NameSpace=classlist[i].NameSpace
+        e.Name=classlist[i].classname
+        e.NameSpace=classlist[i].namespace
         
         if e.NestingTypeHandle then
-          e.FullName=classlist[i].FullName
+          e.FullName=mono_class_getFullName(classlist[i].class)        
         else
           if e.NameSpace~='' then
             e.FullName=e.NameSpace..'.'..e.Name
@@ -373,12 +317,13 @@ local function getClasses(Image)
             e.FullName=e.Name
           end
         end
-        e.Handle=classlist[i].Handle
-        e.ParentHandle=classlist[i].ParentHandle          
-        e.Image=Image        
+        e.Handle=classlist[i].class
+        e.ParentHandle=mono_class_getParent(e.Handle)                 
+          
+        e.Image=Image       
         
-        table.insert(Image.Classes,e)
-        Image.Domain.ClassHandleLookup[e.Handle]=e         
+        
+        table.insert(Image.Classes,e)        
       end     
     end
   else
@@ -393,8 +338,7 @@ local function getClasses(Image)
       e.ParentHandle=DataSource.DotNetDataCollector.GetTypeDefParent(Image.Handle, e.Handle) --classlist[i].Extends
       e.Image=Image
       
-      table.insert(Image.Classes,e) 
-      Image.Domain.ClassHandleLookup[e.Handle]=e        
+      table.insert(Image.Classes,e)      
     end
   end
 
@@ -413,12 +357,13 @@ local function getImages(Domain)
   Domain.Images.HandleLookup={}
   
   if Domain.Control==CONTROL_MONO then
-    local imagesinfo=mono_enumImagesEx(Domain.DomainHandle)
-    
-    for i=1,#imagesinfo do
+    --mono
+    local a=mono_enumAssemblies(Domain.DomainHandle)
+    for i=1,#a do
+      local image=mono_getImageFromAssembly(a[i])
       local e={}
-      e.Handle=imagesinfo[i].Image
-      e.Name=imagesinfo[i].Path
+      e.Handle=image
+      e.Name=mono_image_get_name(image) --full path
       e.FileName=extractFileName(e.Name)
       e.Domain=Domain
       table.insert(Domain.Images,e)
@@ -452,7 +397,6 @@ end
 
 local function getDomains()  
   DataSource.Domains={}
-  DataSource.Domains.ClassHandleLookup={} 
     
   if monopipe then
     local mr=mono_enumDomains() 
@@ -463,7 +407,6 @@ local function getDomains()
       local e={}
       e.Handle=mr[i]
       e.Control=CONTROL_MONO
-      e.ClassHandleLookup={}
       table.insert(DataSource.Domains,e)
     end
   end
@@ -475,11 +418,10 @@ local function getDomains()
       e.Handle=mr[i].DomainHandle
       e.Name=mr[i].Name
       e.Control=CONTROL_DOTNET
-      e.ClassHandleLookup={}
       table.insert(DataSource.Domains,e)
    end
   end
-   
+  
   return DataSource.Domains
 end
 
@@ -494,7 +436,7 @@ local function clearClassInformation(frmDotNetInfo)
   frmDotNetInfo.CurrentlyDisplayedClass=nil
 end
 
-local function ClassFetchWaitTillReadyAndSendData(thread, frmDotNetInfo, Image, Filter, FetchDoneFunction)
+local function ClassFetchWaitTillReadyAndSendData(thread, frmDotNetInfo, Image, OnDataFunction, FetchDoneFunction)
   --print("ClassFetchWaitTillReadyAndSendData")
   if Image.Classes==nil then 
     print("ClassFetchWaitTillReadyAndSendData Error: Image.Classes is nil")
@@ -502,7 +444,6 @@ local function ClassFetchWaitTillReadyAndSendData(thread, frmDotNetInfo, Image, 
   end
   
   while Image.Classes.Busy and (not thread.Terminated) do 
-    print("ClassFetchWaitTillReadyAndSendData: Image.Classes = busy") --'should' never happen
     sleep(100)    
   end
   
@@ -512,19 +453,25 @@ local function ClassFetchWaitTillReadyAndSendData(thread, frmDotNetInfo, Image, 
   local i
   local block={}
   local StartIndex=1
-  
-  if Filter~='' then       
-    for i=1,#Image.Classes do  
-      if Image.Classes[i].FullName:upper():find(Filter,1,true) then                
-        table.insert(frmDotNetInfo.FilteredClassList, Image.Classes[i]) 
-      end      
+  for i=1,#Image.Classes do
+    local j=1+((i-1) % 20)
+    block[j]=Image.Classes[i]
+    
+    if j==20 then
+      synchronize(OnDataFunction,thread, block, StartIndex)
+      StartIndex=i+1
+      block={}      
     end
-  end  
+  end
+  
+  if #block>0 then
+    synchronize(OnDataFunction,thread, block, StartIndex)
+  end
   
   synchronize(FetchDoneFunction)  
 end
 
-local function StartClassFetch(frmDotNetInfo, Image, Filter, FetchDoneFunction)
+local function StartClassFetch(frmDotNetInfo, Image, OnDataFunction, FetchDoneFunction)
   --create a thread that fetches the full classlist if needed and then calls the OnDataFunction untill full 
   --StartClassFetch called while frmDotNetInfo.ClassFetchThread is not nil. Destroy the old one first  
   if frmDotNetInfo.ClassFetchThread then
@@ -533,12 +480,8 @@ local function StartClassFetch(frmDotNetInfo, Image, Filter, FetchDoneFunction)
     frmDotNetInfo.ClassFetchThread.waitfor()
     frmDotNetInfo.ClassFetchThread.destroy()
     frmDotNetInfo.ClassFetchThread=nil
-  end
-  
-  if Filter=='' then
-    frmDotNetInfo.FilteredClassList=nil
-  else
-    frmDotNetInfo.FilteredClassList={}
+    
+    
   end
   
   if Image.Classes==nil then
@@ -548,7 +491,6 @@ local function StartClassFetch(frmDotNetInfo, Image, Filter, FetchDoneFunction)
     --create a thread that fetches the classes
     frmDotNetInfo.ClassFetchThread=createThread(function(t)
       --get the classess
-      t.Name='frmDotNetInfo_ClassFetchThread'
       t.FreeOnTerminate(false)
       getClasses(Image)      
       Image.Classes.Busy=nil
@@ -559,14 +501,14 @@ local function StartClassFetch(frmDotNetInfo, Image, Filter, FetchDoneFunction)
       end
       
       --all classes are fetched, send to the waiting form
-      ClassFetchWaitTillReadyAndSendData(t, frmDotNetInfo, Image, Filter, FetchDoneFunction)      
+      ClassFetchWaitTillReadyAndSendData(t, frmDotNetInfo, Image, OnDataFunction, FetchDoneFunction)      
     end)  
   else
     --create a thread that waits until Busy is false/gone and fill the list normally
     --print("Already has list")
     frmDotNetInfo.ClassFetchThread=createThread(function(t)
       t.FreeOnTerminate(false)
-      ClassFetchWaitTillReadyAndSendData(t, frmDotNetInfo, Image, Filter, FetchDoneFunction) 
+      ClassFetchWaitTillReadyAndSendData(t, frmDotNetInfo, Image, OnDataFunction, FetchDoneFunction) 
     end)
   end
   
@@ -725,28 +667,10 @@ local function edtClassFilterChange(frmDotNetInfo, sender)
   frmDotNetInfo.lbImages.OnSelectionChange(frmDotNetInfo.lbImages)
 end
 
-local function ClassListDataRequest(frmDotNetInfo, sender, listitem)
-  if listitem.index==-1 then
-    listitem.Caption=''
-  end
-  
-  if frmDotNetInfo.FilteredClassList then    
-    listitem.Caption=frmDotNetInfo.FilteredClassList[listitem.index+1].FullName
-  else 
-    if DataSource.Domains[frmDotNetInfo.lbDomains.ItemIndex+1].Images[frmDotNetInfo.lbImages.ItemIndex+1].Classes and
-       DataSource.Domains[frmDotNetInfo.lbDomains.ItemIndex+1].Images[frmDotNetInfo.lbImages.ItemIndex+1].Classes[listitem.index+1]
-    then   
-      listitem.Caption=DataSource.Domains[frmDotNetInfo.lbDomains.ItemIndex+1].Images[frmDotNetInfo.lbImages.ItemIndex+1].Classes[listitem.index+1].FullName
-    end
-  end
-end
-
-
 
 local function ClassSelectionChange(frmDotNetInfo, sender)
-  
   --printf("ClassSelectionChange.  ItemIndex=%d",sender.ItemIndex)
-  --printf("frmDotNetInfo.lvClasses.ItemIndex=%d",frmDotNetInfo.lvClasses.ItemIndex)  
+  --printf("frmDotNetInfo.lbClasses.ItemIndex=%d",frmDotNetInfo.lbClasses.ItemIndex)  
   
   if sender.ItemIndex>=0 then
 
@@ -755,19 +679,13 @@ local function ClassSelectionChange(frmDotNetInfo, sender)
     
     if Image.Classes==nil then return end
     
-    local lvc=frmDotNetInfo.lvClasses    
-    if lvc.ItemIndex==-1 then return end
-
-    local Class
-    if frmDotNetInfo.FilteredClassList then
-      Class=frmDotNetInfo.FilteredClassList[lvc.ItemIndex+1]
-    else
-      Class=Image.Classes[lvc.ItemIndex+1]  
-    end
+    local lbc=frmDotNetInfo.lbClasses    
+    if lbc.ItemIndex==-1 then return end
+    
 
     
-   -- local ClassIndex=lvc.Items[lvc.ItemIndex].Data
-  --  local Class=Image.Classes[ClassIndex]      
+    local ClassIndex=lbc.Items.Data[lbc.ItemIndex]    
+    local Class=Image.Classes[ClassIndex]      
     if Class==nil then return end
     
     _G.LastClass=Class 
@@ -800,7 +718,7 @@ local function ClassSelectionChange(frmDotNetInfo, sender)
         l=createLabel(frmDotNetInfo.gbInheritance)        
         local fullname=ClassList[i].Class.Name
         if ClassList[i].Class.NameSpace and ClassList[i].Class.NameSpace~='' then
-          fullname=ClassList[i].Class.NameSpace..'.'..fullname
+          fullname=ClassList[i].Class.NameSpace..fullname
         end
         l.Caption=fullname
         ClassList[i].Label=l
@@ -852,12 +770,12 @@ end
 
 
 local function ImageSelectionChange(frmDotNetInfo, sender)
-  frmDotNetInfo.lvClasses.Items.count=0
+  frmDotNetInfo.lbClasses.Items.clear()
   clearClassInformation(frmDotNetInfo)
 
   if sender.ItemIndex>=0 then   
-    frmDotNetInfo.lvClasses.Enabled=false
-    frmDotNetInfo.lvClasses.Cursor=crHourGlass
+    frmDotNetInfo.lbClasses.Enabled=false
+    frmDotNetInfo.lbClasses.Cursor=crHourGlass
     
     local Domain=DataSource.Domains[frmDotNetInfo.lbDomains.ItemIndex+1]
     local Image=Domain.Images[frmDotNetInfo.lbImages.ItemIndex+1]
@@ -865,22 +783,7 @@ local function ImageSelectionChange(frmDotNetInfo, sender)
     
     
     
-    StartClassFetch(frmDotNetInfo, Image, frmDotNetInfo.edtClassFilter.Text:upper(),
-      function()
-        --called when done
-        if frmDotNetInfo.FilteredClassList then
-          frmDotNetInfo.lvClasses.Items.count=#frmDotNetInfo.FilteredClassList 
-        else
-          frmDotNetInfo.lvClasses.Items.count=#Image.Classes
-        end
-        
-        frmDotNetInfo.lvClasses.Enabled=true
-        frmDotNetInfo.lvClasses.Cursor=crDefault      
-      end
-    )
-    
-    --[[
-    , function(thread, classlistchunk, StartIndex)
+    StartClassFetch(frmDotNetInfo, Image, function(thread, classlistchunk, StartIndex)
       --print("StartIndex="..StartIndex)
       --executed every 10 lines or so, in the main thread
       local ClassFilterText=frmDotNetInfo.edtClassFilter.Text:upper()  --assume case insentivie
@@ -927,7 +830,7 @@ local function ImageSelectionChange(frmDotNetInfo, sender)
       frmDotNetInfo.lbClasses.Enabled=true
       frmDotNetInfo.lbClasses.Cursor=crDefault      
     end)
-    --]]
+    
     
   end
 end
@@ -936,7 +839,7 @@ end
 local function DomainSelectionChange(frmDotNetInfo, sender)
 
   frmDotNetInfo.lbImages.Items.clear()
-  frmDotNetInfo.lvClasses.Items.count=0
+  frmDotNetInfo.lbClasses.Items.clear()
   clearClassInformation(frmDotNetInfo)
 
   if sender.ItemIndex>=0 then
@@ -956,54 +859,6 @@ local function DomainSelectionChange(frmDotNetInfo, sender)
       frmDotNetInfo.lbImages.Items.Add(s)
     end
   end
-end
-
-local function FindInListView(listview)
-  _G.lb=lb
-  local fd=createFindDialog(frmDotNetInfo)
-  fd.Options='[frDown, frHideWholeWord,  frHideEntireScope, frHideUpDown]'
-  fd.Title='Search in '..listbox.name
-
-  
-    
-  fd.OnFind=function()
-    local caseSensitive=fd.Options:find('frMatchCase')~=nil
-    local start=listview.ItemIndex
-    start=start+1
-    
-    local needle=fd.FindText
-    if not caseSensitive then
-      needle=needle:upper()
-    end
-    
-    for i=start, listview.Items.Count-1 do      
-      local haystack=listview.Items[i].Caption      
-      
-      if not caseSensitive then
-        haystack=haystack:upper()
-      end
-           
-      if haystack:find(needle,0,true)~=nil then
-        listview.itemIndex=i
-        return
-      end
-    end
-    beep() 
-  end
-  
-  
-  fd.execute()  
-
-  local x,y
-  x=(listbox.height / 2)
-  x=x-(fd.height/2)
-  
-  y=(listbox.width / 2)
-  x=y-(fd.width / 2)
-  
-  x,y=listview.clientToScreen(x,y)
-  fd.top=y
-  fd.left=x
 end
 
 local function FindInListBox(listbox)
@@ -1057,9 +912,6 @@ end
 local delayedResize
 
 local function InheritanceResize(gbInheritance, now)
-  local oldresize=gbInheritance.OnResize
-  gbInheritance.OnResize=nil
-  
   if delayedResize==nil then
     local f=function()
       local i,x,y
@@ -1094,9 +946,7 @@ local function InheritanceResize(gbInheritance, now)
     --reset timer
     delayedResize.Enabled=false
     delayedResize.Enabled=true
-  end  
-  
-  gbInheritance.OnResize=oldresize
+  end
 end
 
 local function getMethodAddress(Method)
@@ -1182,7 +1032,7 @@ local function GeneratePatchTemplateForMethod(frmDotNetInfo)
     getClassMethods(Class) --reload the methods
     
     --reload the list and reselect the correct entry
-    ClassSelectionChange(frmDotNetInfo, frmDotNetInfo.lvClasses)
+    ClassSelectionChange(frmDotNetInfo, frmDotNetInfo.lbClasses)
         
     local i
     for i=1, #Class.Methods do
@@ -1400,10 +1250,13 @@ old]]..methodname..'('..varstring..[[);
   createAutoAssemblerForm(script)
 end
 
-function dotNetInfo.SpawnInvokeMethodDialog(Method, instanceAddress, OnResult, OnCreateInstance)
-  --spawns an invoke method dialog.
-  --It's a modal form, unless OnResult is set
+local function SpawnInjectMethodDialog(frmDotNetInfo)
+  local Class=frmDotNetInfo.CurrentlyDisplayedClass
+  if Class==nil then return end
   
+  local Method=Class.Methods[frmDotNetInfo.lvMethods.ItemIndex+1]
+  if Method==nil then return end
+ 
   if (Method.Class.Image.Domain.Control~=CONTROL_MONO) then
     if dotnetpipe==nil then    
       if messageDialog("Inject the CE .NET interface into the target process?", mtConfirmation,mbYes,mbNo)~=mrYes then
@@ -1415,88 +1268,29 @@ function dotNetInfo.SpawnInvokeMethodDialog(Method, instanceAddress, OnResult, O
       end    
     end
     
-    local moduleid=dotnet_getModuleID(Method.Class.Image.FileName)
+    local moduleid=dotnet_getModuleID(Class.Image.FileName)
     local methodtoken=Method.Handle
-    local address=instanceAddress
+    local address=getAddressSafe(frmDotNetInfo.comboFieldBaseAddress.Text)
     local wrappedAddress=dotnet_wrapobject(address)
     local newaddress=readPointer(wrappedAddress)
-    --if newaddress~=address then --wrapping sometimes changes the original address
-   --   frmDotNetInfo.comboFieldBaseAddress.Text=string.format("%.8x",newaddress)
-    --end
+    if newaddress~=address then --wrapping sometimes changes the original address
+      frmDotNetInfo.comboFieldBaseAddress.Text=string.format("%.8x",newaddress)
+    end
     
     
-    local midinfo=dotnet_invoke_method_dialog(Method.Class.Name..'.'..Method.Name, moduleid, methodtoken, wrappedAddress, OnResult)
+    local mifinfo=dotnet_invoke_method_dialog(Class.Name..'.'..Method.Name, moduleid, methodtoken, wrappedAddress)
     
     --also unwrap this address when done with it
-    local od=midinfo.mid.onDestroy   --save the old ondestroy 
-    midinfo.mid.onDestroy=function(sender)
+    local od=mifinfo.mif.onDestroy   --save the old ondestroy 
+    mifinfo.mif.onDestroy=function(sender)
       dotnet_unwrapobject(wrappedAddress)    
       od(sender) --call the old ondestroy
     end
   else
     --use the already existing mono way
-    
-    return mono_invoke_method_dialog(Method.Class.Image.Domain.Handle, Method.Handle, instanceAddress, OnResult, OnCreateInstance) 
+    mono_invoke_method_dialog(Method.Class.Image.Domain.Handle, Method.Handle, getAddressSafe(frmDotNetInfo.comboFieldBaseAddress.Text)) 
   end
-end
-
-dotNetInfo_SpawnInvokeMethodDialog=dotNetInfo.SpawnInvokeMethodDialog --compatibility fix for old version (that was never releaseD)
-
-
-local function SpawnInjectMethodDialog(frmDotNetInfo)
-  --called from the invoke method popupmenu item
-  local Class=frmDotNetInfo.CurrentlyDisplayedClass
-  if Class==nil then return end
   
-  local Method=Class.Methods[frmDotNetInfo.lvMethods.ItemIndex+1]
-  if Method==nil then return end
-  
-  dotNetInfo.SpawnInvokeMethodDialog(Method, getAddressSafe(frmDotNetInfo.comboFieldBaseAddress.Text), 
-    function(result, _secondary, vtype, hrs)       --OnResult
-      --if result and vtype and hrs and hrs~='' then
-      --  print(hrs)
-      --end
-    end,
-
-    function(classHandle) --OnCreateInstance
-      print("dotnetinfo.SpawnInjectMethodDialog:  OnCreateInstance")
-      
-      --find this class and all the classes that inherit from this
-      local newClass=Class.Image.Domain.ClassHandleLookup[classHandle]
-      if newClass==nil then
-        --print("Class not yet found. Searching unopened images")
-        local d=Class.Image.Domain
-        
-        if d.Images==nil then
-          DataSource.getImages(d)
-        end
-        
-        if d.Images==nil then return end
-        
-        for i=1,#d.Images do --assuming that the images list is already populated
-          if d.Images[i].Classes==nil then
-            --not yet loaded, check it
-            d.Images[i].Classes={}
-            d.Images[i].Classes.Busy=true            
-            DataSource.getClasses(d.Images[i])
-            d.Images[i].Classes.Busy=false 
-            
-            newClass=Class.Image.Domain.ClassHandleLookup[classHandle] --check if found
-            if newClass then break end --it has been found           
-          end         
-        end
-      end
-      
-      if newClass==nil then MessageDialog('Failure finding the class to instantiate', mtError) return end
-      local newInstance,msg=dotNetInfo.createInstanceOfClassDialog(Class)
-      
-      if newInstance==nil then
-        MessageDialog(msg, mtError)
-      else
-        return string.format('0x%x', newInstance)
-      end
-    end
-  )
   
 end
 
@@ -1694,10 +1488,6 @@ DotNetValueReaders[ELEMENT_TYPE_PTR]=function(address)
 end
 DotNetValueReaders[ELEMENT_TYPE_CLASS]=DotNetValueReaders[ELEMENT_TYPE_PTR]
 
---global
-function getDotNetValueReader(dotnettype)
-  return DotNetValueReaders[dotnettype]
-end
 
 
 
@@ -1876,12 +1666,7 @@ local function getFieldValue(Field, fieldaddress)
   if (Field.VarType==ELEMENT_TYPE_STRING) or (Field.VarTypeName == "System.String") then
     local a=readPointer(a)
     if a then 
-      local str=readDotNetString(a, Field)
-      if str then
-        return '"'..readDotNetString(a, Field)..'"' 
-      else
-        return '<nil>'
-      end
+      return '"'..readDotNetString(a, Field)..'"' 
     else
       return '?'
     end
@@ -1905,7 +1690,6 @@ end
 
 
 local function FieldValueUpdaterTimer(frmDotNetInfo, sender)
-  
   local i
   local address=getAddressSafe(frmDotNetInfo.comboFieldBaseAddress.Text)
   local Class=frmDotNetInfo.CurrentlyDisplayedClass
@@ -1998,24 +1782,87 @@ end
 
 local function btnLookupInstancesClick(frmDotNetInfo, sender)
   if debugInstanceLookup then print("btnLookupInstancesClick") end
-  
-  if frmDotNetInfo.InstanceScanner then
-    frmDotNetInfo.InstanceScanner.terminate()
-    frmDotNetInfo.InstanceScanner.destroy()
-    frmDotNetInfo.InstanceScanner=nil
-  end
 
   local Class=frmDotNetInfo.CurrentlyDisplayedClass
   if Class==nil then return end
   
+  local scannerThread
+  local f,l,pb,btnCancel
+  local f=createForm(false)
+  local results={}
+  f.Caption="Scanning..."
+  f.BorderIcons='[]'
 
   
+ 
   
+  l=createLabel(f)
+  l.Caption="Please wait while scanning for the list of instances"
+
+
+  
+  local pb=createProgressBar(f)
+  pb.BorderSpacing.Left=DPIMultiplier*1
+  pb.BorderSpacing.Right=DPIMultiplier*1
+  
+  if Class.Image.Domain.Control~=CONTROL_MONO then --unknown time
+    pb.Visible=false  
+  end
+
+
+  btnCancel=createButton(f)
+  btnCancel.Caption=translate("Cancel")
+  btnCancel.AutoSize=true
+
+
+
+
+  btnCancel.BorderSpacing.Top=DPIMultiplier*10
+  btnCancel.BorderSpacing.Bottom=DPIMultiplier*10
+
+  l.AnchorSideTop.Control=f
+  l.AnchorSideTop.Side=asrTop
+  l.AnchorSideLeft.Control=f
+  l.AnchorSideLeft.Side=asrLeft
+  l.AnchorSideRight.Control=f
+  l.AnchorSideRight.Side=asrRight
+  l.Anchors='[akLeft, akRight, akTop]'
+
+  pb.AnchorSideTop.Control=l
+  pb.AnchorSideTop.Side=asrBottom
+  pb.AnchorSideLeft.Control=f
+  pb.AnchorSideLeft.Side=asrLeft
+  pb.AnchorSideRight.Control=f
+  pb.AnchorSideRight.Side=asrRight
+  pb.Anchors='[akLeft, akRight, akTop]'
+
+
+  btnCancel.AnchorSideTop.Control=pb
+  btnCancel.AnchorSideTop.Side=asrBottom
+  btnCancel.AnchorSideLeft.Control=f
+  btnCancel.AnchorSideLeft.Side=asrCenter
+  btnCancel.OnClick=function(s) f.close() end
+
+  f.OnClose=function(sender)
+    if debugInstanceLookup then print("LookupInstances: f.OnClose") end
+    
+    if scannerThread then --scannerThread is free on terminate, but before it does that it syncs and sets this var to nil
+      if debugInstanceLookup then print("Thread still alive. Terminating thread") end    
+      scannerThread.terminate()
+    else
+      if debugInstanceLookup then print("thread was finished. No need to terminate") end  
+    end
+    f=nil --don't access f after this. it has been destroyed (caFree)
+    return caFree      
+  end
+
+
+  f.AutoSize=true
+  f.Position=poScreenCenter
   
   --create the thread that will do the scan
   --it's possible the thread finishes before showmodal is called, but thanks to synchronize that won't happen
-  frmDotNetInfo.scannerThread=createThread(function(t)
-    local results={}
+  scannerThread=createThread(function(t)
     if debugInstanceLookup then print("scannerThread start") end
     t.Name='Instance Scanner'
     
@@ -2029,11 +1876,15 @@ local function btnLookupInstancesClick(frmDotNetInfo, sender)
     
     if debugInstanceLookup then print("scan finished") end
 
-    if t.Terminated then return end  
-
-
+    scannerThread=nil
     synchronize(function() 
-      if t.Terminated then return end       
+      if debugInstanceLookup then print("sending modalresult to f") end    
+      if not t.Terminated then 
+        f.ModalResult=mrOK 
+      else
+        if debugInstanceLookup then print("scan was terminated") end    
+        return
+      end       
     
       if debugInstanceLookup then print("scanFinishedProperly") end
       local i
@@ -2041,13 +1892,10 @@ local function btnLookupInstancesClick(frmDotNetInfo, sender)
       for i=1,#results do
         frmDotNetInfo.comboFieldBaseAddress.Items.add(string.format("%.8x",results[i]))
       end 
-      
-      frmDotNetInfo.comboFieldBaseAddress.Items.add('<Create new instance>')
 
       if #results then
         frmDotNetInfo.comboFieldBaseAddress.ItemIndex=0      
         frmDotNetInfo.comboFieldBaseAddress.OnChange(frmDotNetInfo.comboFieldBaseAddress)       
-        frmDotNetInfo.comboFieldBaseAddress.DroppedDown=true
       end  
     end)
   end)
@@ -2221,14 +2069,13 @@ local function InjectInvasiveCollector()
     
     
     for i=1, #frmDotNetInfos do --refresh
-      if (frmDotNetInfos[i].lvClasses.ItemIndex~=-1) then ClassSelectionChange(frmDotNetInfos[i], frmDotNetInfo.lvClasses) end
+      if (frmDotNetInfos[i].lbClasses.ItemIndex~=-1) then ClassSelectionChange(frmDotNetInfos[i], frmDotNetInfo.lbClasses) end
     end
   end
 end
 
 
 function miDotNetInfoClick(sender)
-
   --print("miDotNetInfoClick")
   --in case of a double case scenario where there's both .net and mono, go for net first if the user did not activate mono explicitly 
   if (DataSource.DotNetDataCollector==nil) or (CurrentProcess~=getOpenedProcessID()) then
@@ -2241,7 +2088,7 @@ function miDotNetInfoClick(sender)
   
   
   --print("miDotNetInfoClick 2")
-  if miMonoTopMenuItem and MainForm.miMonoActivate.Visible and (monopipe==nil)  then
+  if miMonoTopMenuItem and miMonoTopMenuItem.miMonoActivate.Visible and (monopipe==nil)  then
     --print("checking with getDotNetDataCollector().Attached")
     local dndc=getDotNetDataCollector()
     if dndc==nil or dndc.Attached==false then --no .net and the user hasn't activated mono features. Do it for the user
@@ -2314,7 +2161,7 @@ function miDotNetInfoClick(sender)
   frmDotNetInfo.miImageFind.ShortCut=textToShortCut('Ctrl+F')
   
   frmDotNetInfo.miClassFind.OnClick=function(f)
-    FindInListView(frmDotNetInfo.lvClasses)
+    FindInListBox(frmDotNetInfo.lbClasses)
   end  
   frmDotNetInfo.miClassFind.ShortCut=textToShortCut('Ctrl+F')
   
@@ -2381,11 +2228,10 @@ function miDotNetInfoClick(sender)
   frmDotNetInfo.lbImages.OnSelectionChange=function(sender) ImageSelectionChange(frmDotNetInfo, sender) end
   
   --Classes box setup
-  frmDotNetInfo.lvClasses.OnSelectItem=function(sender, listitem, selected) ClassSelectionChange(frmDotNetInfo, sender) end
-  frmDotNetInfo.lvClasses.OnData=function(sender, listitem) ClassListDataRequest(frmDotNetInfo, sender, listitem) end
+  frmDotNetInfo.lbClasses.OnSelectionChange=function(sender) ClassSelectionChange(frmDotNetInfo, sender) end
   
   frmDotNetInfo.edtClassFilter.OnChange=function(sender) edtClassFilterChange(frmDotNetInfo, sender) end
-  frmDotNetInfo.edtClassFilter.OnKeyDown=function(sender, key) if key==VK_DOWN then frmDotNetInfo.lvClasses.setFocus() else return key end end
+  frmDotNetInfo.edtClassFilter.OnKeyDown=function(sender, key) if key==VK_DOWN then frmDotNetInfo.lbClasses.setFocus() else return key end end
       
   --Class info setup
   
@@ -2403,8 +2249,6 @@ function miDotNetInfoClick(sender)
   frmDotNetInfo.miGeneratePatchTemplateForMethod.OnClick=function() GeneratePatchTemplateForMethod(frmDotNetInfo) end
   
   
-  frmDotNetInfo.miChangeColors.OnClick=function() SpawnConfigDialog() end
-  
   frmDotNetInfo.lvMethods.OnDblClick=frmDotNetInfo.miJitMethod.OnClick
   
   frmDotNetInfo.comboFieldBaseAddress.OnChange=function(sender) 
@@ -2413,22 +2257,7 @@ function miDotNetInfoClick(sender)
   end
     
   frmDotNetInfo.btnLookupInstances.OnClick=function(sender) btnLookupInstancesClick(frmDotNetInfo, sender) end
-  frmDotNetInfo.comboFieldBaseAddress.OnSelect=function(sender) 
-    if sender.ItemIndex==sender.Items.Count-1 then 
-      local r,err=dotNetInfo.createInstanceOfClassDialog(frmDotNetInfo.CurrentlyDisplayedClass) 
-      if r==nil and err then
-        messageDialog(err, mtError)
-      else
-        local addressString=string.format('%x',r)
-        frmDotNetInfo.comboFieldBaseAddress.Items.insert(0,addressString)
-        frmDotNetInfo.comboFieldBaseAddress.Items.ItemIndex=0
-        
-        frmDotNetInfo.comboFieldBaseAddress.Text=addressString
-        frmDotNetInfo.comboFieldBaseAddress.OnChange(frmDotNetInfo.comboFieldBaseAddress)
-      end
-    end     
-  end 
-  frmDotNetInfo.comboFieldBaseAddress.Items.add('<Create new instance>')
+
 
   frmDotNetInfo.tFieldValueUpdater.OnTimer=function(t) FieldValueUpdaterTimer(frmDotNetInfo,t) end
   frmDotNetInfo.lvStaticFields.OnDblClick=function(sender) lvStaticFieldsDblClick(frmDotNetInfo,sender) end
@@ -2443,23 +2272,8 @@ function miDotNetInfoClick(sender)
     end
   end
   
-  frmDotNetInfo.pmMethods.OnPopup=function(sender)    
-    local enabled=(frmDotNetInfo.comboFieldBaseAddress.Text~='') and (getAddressSafe(frmDotNetInfo.comboFieldBaseAddress.Text)~=nil)
-    if not enabled then 
-      local Class=frmDotNetInfo.CurrentlyDisplayedClass
-      if Class then      
-        --maybe it's a static method
-        if frmDotNetInfo.lvMethods.ItemIndex~=-1 then
-          local Method=Class.Methods[frmDotNetInfo.lvMethods.ItemIndex+1]
-          if Method and Method.Static then
-            enabled=true
-          end
-        end
-      end
-      
-    end
-
-    frmDotNetInfo.miInvokeMethod.Enabled=enabled
+  frmDotNetInfo.pmMethods.OnPopup=function(sender)
+    frmDotNetInfo.miInvokeMethod.Enabled=(frmDotNetInfo.comboFieldBaseAddress.Text~='') and (getAddressSafe(frmDotNetInfo.comboFieldBaseAddress.Text)~=nil)
   end
   
   
@@ -2538,7 +2352,7 @@ function miDotNetInfoClick(sender)
             
             if frmDotNetInfo.lvFields2_valuecache[node]==nil then
                
-              frmDotNetInfo.lvFields2_valuecache[node]=getFieldValue(Field, address)   
+              frmDotNetInfo.lvFields2_valuecache[node]=getFieldValue(Field, address)   --string.format("%x=%s",address, getFieldValue(Field, address)) 
             end            
               
             return frmDotNetInfo.lvFields2_valuecache[node]
@@ -2559,11 +2373,6 @@ function miDotNetInfoClick(sender)
      local AccessMask=Method.Attribs & METHOD_ATTRIBUTE_MEMBER_ACCESS_MASK
 
      Sender.Canvas.Font.Color=AccessMaskToColor(AccessMask)
-     
-     --if Method.Attribs & METHOD_ATTRIBUTE_STATIC == METHOD_ATTRIBUTE_STATIC then
-     if Method.Static then
-       Sender.Canvas.Brush.Color=clBlue
-     end
      return true
    end
    
@@ -2578,8 +2387,6 @@ function miDotNetInfoClick(sender)
         c=invertColor(c)        
       end
       canvas.Font.Color=c
-      
-      
     end    
     
     frmDotNetInfo.lvFields2.OnExpanding=function(sender, node)

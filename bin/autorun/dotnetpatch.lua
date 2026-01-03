@@ -27,13 +27,13 @@ function dotnetpatch_getAllReferences()
     mono_enumImages(function(img)
       local n=mono_image_get_filename(img)
       local ln=extractFileName(n:lower())
-      --not removing default core assembly from referrences  
-	  table.insert(r,n)
-	  if ln=='mscorlib.dll' or ln=='netstandard.dll' or ln=='system.runtime.dll' then
-	    if sysfile==nil then
-		  sysfile=n
-		end
-	  end
+      if ln~='mscorlib.dll' and ln~='netstandard.dll' then
+        table.insert(r,n)
+      else
+        if sysfile==nil then
+          sysfile=n
+        end
+      end
     end)
     return r,sysfile
   end
@@ -47,14 +47,13 @@ function dotnetpatch_getAllReferences()
     local j
     for j=1,#ml do
       local ln=extractFileName(ml[j].Name):lower()
-      --not removing default core assembly from referrences  
-	  r[#r+1]=ml[j].Name
-	  printf("%d %s", j, ml[j].Name)
-	  if ln=='mscorlib.dll' or ln=='netstandard.dll' or ln=='system.runtime.dll' then
-	    if sysfile==nil then
-		  sysfile=ml[j].Name
-		end
-	  end
+      if ln~='mscorlib.dll' and ln~='netstandard.dll' then
+        r[#r+1]=ml[j].Name
+      else
+        if sysfile==nil then
+          sysfile=ml[j].Name
+        end
+      end
     end
   end
 
@@ -86,14 +85,13 @@ function findDotNetMethodAddress(name, modulename)
     for i=1,#assemblies do
       local img=mono_getImageFromAssembly(assemblies[i])
       local imagename=mono_image_get_filename(img):lower()
-      local ln=extractFileName(imagename)
-	  
-      if ln==dllmodulelower then
+      
+      if imagename==dllmodulelower then
         --find the class and method
         local class=mono_image_findClass(img, namespace, classname)          
         
         if class then
-          local method=mono_class_findMethod(class, methodname)
+          local method=mono_class_findMethod(c, methodname)
           if method then
             return mono_compile_method(method)
           end

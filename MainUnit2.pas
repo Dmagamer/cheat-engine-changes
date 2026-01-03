@@ -32,7 +32,7 @@ const
   strMyCheatTables='My Mod Tables';
   strSpeedHack='Speedmodifier';
 {$else}
-  strCheatEngine='Cheat Engine';
+  strCheatEngine='parson tools';
   strCheatTable='Cheat Table';
   strCheatTableLower='cheat table';
   strCheat='Cheat';
@@ -45,7 +45,7 @@ const
 resourcestring
   cename = strCheatEngine;
   cenamewithversion = strCheatEngine+' '+strVersionPart;
-  rsCheatEngine = strCheatEngine;
+  rsparsontools = strCheatEngine;
   rsPleaseWait = 'Please Wait!';
 
 procedure UpdateToolsMenu;

@@ -223,7 +223,7 @@ resourcestring
   rsAskIfStupid = 'Generating a '+strtrainerlower+' with the current state of the cheat '
     +'table will likely result in a completely useless '+strtrainerlower+' that does '
     +'nothing. Are you sure?';
-  rsOSThereIsANewerVersionifCheatEngineOutEtc = 'There is a newer version of '+strCheatEngine+' out. It''s recommended to use that version instead';
+  rsOSThereIsANewerVersionifparsontoolsOutEtc = 'There is a newer version of '+strCheatEngine+' out. It''s recommended to use that version instead';
   rsOSThisCheatTableIsCorrupt = 'This '+strCheatTableLower+' is corrupt';
   rsInvalidLuaForTrainer = 'The lua script in this '+strTrainerLower+' has some issues and will therefore not load';
 
@@ -399,7 +399,7 @@ begin
         try
           version:=strtoint(tempnode.TextContent);
           if (version>CurrentTableVersion) then
-            showmessage(rsOSThereIsANewerVersionifCheatEngineOutEtc);
+            showmessage(rsOSThereIsANewerVersionifparsontoolsOutEtc);
 
           lastLoadedTableVersion:=version;
         except
@@ -1016,7 +1016,7 @@ begin
     getmem(buf,size);
     if readprocessmemory(processhandle,pointer(address),buf,size,temp) then
     begin
-      memfile.WriteBuffer(pchar('CHEATENGINE')^,11);
+      memfile.WriteBuffer(pchar('parsontools')^,11);
       temp:=2; //version
       memfile.WriteBuffer(temp,4);
       a:=address;
@@ -1042,7 +1042,7 @@ begin
     getmem(check,12);
     memfile.ReadBuffer(check^,11);
     check[11]:=#0;
-    if check='CHEATENGINE' then
+    if check='parsontools' then
     begin
       memfile.ReadBuffer(temp,4);
       if temp<>1 then raise exception.Create(Format(rsTheVersionOfIsIncompatibleWithThisCEVersion, [filename]));
@@ -1092,7 +1092,7 @@ begin
     begin
       //not xml
 
-      if X='CHEATENGINE' then
+      if X='parsontools' then
       begin
          doc:=ConvertCheatTableToXML(filename)
       end

@@ -1,4 +1,4 @@
-//Copyright Cheat Engine 2023
+//Copyright parson tools 2023
 
 unit gdbserverconnectdialog;
 

@@ -784,7 +784,7 @@ resourcestring
   rsGotoAddress = 'Goto Address';
   rsFillInTheAddressYouWantToGoTo = 'Fill in the address you want to go to';
   rsMemoryViewerRunning = 'Memory Viewer - Running';
-  rsCheatEngineSingleLingeAssembler = 'Single-line assembler';
+  rsparsontoolsSingleLingeAssembler = 'Single-line assembler';
   rsTypeYourAssemblerCodeHereAddress = 'Type your assembler code here: (address=%s)';
   rsTheGeneratedCodeIsByteSLongButTheSelectedOpcodeIsB = 'The generated code is %s byte(s) long, but the selected opcode is %s byte(s) long! Do you want to replace the '
     +'incomplete opcode(s) with NOP''s?';
@@ -3696,7 +3696,7 @@ begin
 
   //  copy
 
-    assemblercode:=InputboxTop(rsCheatEngineSingleLingeAssembler, Format(rsTypeYourAssemblerCodeHereAddress, [inttohex(Address, 8)]), assemblercode, x='', canceled{$ifndef darwin},assemblerHistory{$endif});
+    assemblercode:=InputboxTop(rsparsontoolsSingleLingeAssembler, Format(rsTypeYourAssemblerCodeHereAddress, [inttohex(Address, 8)]), assemblercode, x='', canceled{$ifndef darwin},assemblerHistory{$endif});
     if not canceled then
     begin
 
@@ -4044,7 +4044,7 @@ begin
 end;
 
 procedure TMemoryBrowser.Savememoryregion1Click(Sender: TObject);
-{will save a cheat engine memory region file .CEM}
+{will save a parson tools memory region file .CEM}
 begin
   if frmSaveMemoryRegion=nil then
     frmSaveMemoryRegion:=TFrmSaveMemoryRegion.create(self);

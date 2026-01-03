@@ -105,14 +105,14 @@ extendedToByteTable(number): {}      - Converts an extended to a bytetable
 stringToByteTable(string): {}        - Converts a string to a bytetable
 wideStringToByteTable(string): {}    - Converts a string to a widestring and converts that to a bytetable
 
-byteTableToWord(table, OPTIONAL signed:boolean, OPTIONAL tableindex=1): number       - Converts a bytetable to a word
-byteTableToDword(table, OPTIONAL signed:boolean, OPTIONAL tableindex=1): number      - Converts a bytetable to a dword
-byteTableToQword(table, OPTIONAL tableindex=1): number      - Converts a bytetable to a qword
-byteTableToFloat(table, OPTIONAL tableindex=1): number      - Converts a bytetable to a float
-byteTableToDouble(table, OPTIONAL tableindex=1): number     - Converts a bytetable to a double
-byteTableToExtended(table, OPTIONAL tableindex=1): number   - Converts a bytetable to an extended and converts that to a double
-byteTableToString(table, OPTIONAL tableindex=1): string     - Converts a bytetable to a string
-byteTableToWideString(table, OPTIONAL tableindex=1): string - Converts a bytetable to a widestring and converts that to a string
+byteTableToWord(table, OPTIONAL signed:boolean): number       - Converts a bytetable to a word
+byteTableToDword(table, OPTIONAL signed:boolean): number      - Converts a bytetable to a dword
+byteTableToQword(table): number      - Converts a bytetable to a qword
+byteTableToFloat(table): number      - Converts a bytetable to a float
+byteTableToDouble(table): number     - Converts a bytetable to a double
+byteTableToExtended(table): number   - Converts a bytetable to an extended and converts that to a double
+byteTableToString(table): string     - Converts a bytetable to a string
+byteTableToWideString(table): string - Converts a bytetable to a widestring and converts that to a string
 
 bOr(int1, int2)   : Binary Or
 bXor(int1, int2)  : Binary Xor
@@ -145,7 +145,7 @@ loadPOFile(path): Loads a .PO file used for translation
 translate(string): Returns a translation of the string. Returns the same string if it can't be found
 translateID(translationid: string, originalstring: string OPTIONAL): Returns a translation of the string id
 
-convertToUTF8(string/bytetable, originalcodepagenumber): Conversts a given string/bytearray into a utf8 converted from the given codepage number
+convertToUTF8(string/bytetable, originalcodepagenumber): Conversts a given string/bytearray into a utf8 converted from the gtiven codepage number
 ansiToUTF8(string): Converts a string in Ansi encoding to UTF8
 UTF8ToAnsi(string): Converts a string in UTF8 encoding to Ansi
 Note: GUI components mainly show in UTF8, some other functions use Ansi, try to find out which ones...
@@ -209,7 +209,7 @@ autoAssemble(text, disableInfo OPTIONAL)
 
 autoAssembleCheck(text, enable, targetself) : Checks the script for syntax errors. Returns true on succes, false with an error message on failure
 
-compile(text, address OPTIONAL, targetself OPTIONAL, kernelmode OPTIONAL, nodebug OPTIONAL) : Compiles C code and returns a table with the addresses of the symbols on success, or nil with a secondary result containing the errormessage
+compile(text, address OPTIONAL, targetself OPTIONAL) : Compiles C code and returns a table with the addresses of the symbols on success, or nil with a secondary result containing the errormessage
 compile({indexedtable containing scripts}, address OPTIONAL, targetself OPTIONAL) ) : ^ but allows multiple scripts to be compiled into one
 compileFiles({filelist}, address OPTIONAL, targetself OPTIONAL) ): ^ but takes an indexed list of files
 compileTCCLib() - Compiles the TCC library functions some C code may need to function internally
@@ -380,9 +380,6 @@ function onTableLoad(before): If defined this function will be called twice when
 
 function onLuaError(errorstring): if defined this function will be called when a lua error happens. The string returned will be the error shown
 
-function onPointerMapGenerationStart(): Called when a pointermap is about to be generated. The specific thread that calls tyhis will do so.  (Use this to adjust the readProcessMemory output)
-function onPointerMapGenerationFinish(): Called when a pointermap has finished being generated
-
 
 getOpenedProcessID() : Returns the currently opened process. If none is open, returns 0
 getOpenedProcessHandle(): Returns the handle of the currently opened process
@@ -460,15 +457,6 @@ readFromClipboard():  Reads the text from the clipboard
 
 speedhack_setSpeed(speed) : Enables the speedhack if needed and sets the specific speed
 speedhack_getSpeed(): Returns the last set speed
-
-registerSpeedhackCallbacks(
-  OnActivate()     : Handled, result, errormsg - Called when the speedhack gets activated.   Return true if you handled it. False if you wish to let CE's default handler handle it. If true, the 2nd result is success or failure. And on failure, the 3th result is the error message shown to the user
-  OnSetSpeed(speed): Handled, result, errormsg - Called when the speedhack speed gets set.   '  '  '
-): CallbackID - Registers callbacks for use in the speedhack
-
-unregisterSpeedhackCallbacks(CallbackID) - Unregisters callbacks for the speedhack
-
-
 
 injectDLL(filename, skipsymbolreloadwait OPTIONAL): Injects a dll or dylib, and returns true on success
 injectLibrary(filepath, skipsymbolreloadwait OPTIONAL): Same as injectDLL, just sounds better
@@ -599,12 +587,8 @@ targetIs64Bit(): Returns true if the target process is 64-bit, false if 32-bit
 targetIsX86(): Returns true if the target process is x86 based
 targetIsArm(): Returns true if the target process is arm based 
 targetIsAndroid(): Returns true if the target process is running on the Android OS
-targetIsRosetta(): Returns true if the target process is running inside the rosetta emulator (macos only)
 
-getABI(): Returns 0 for windows calling convention. Returns 1 for unix/linux calling convention
-
-
-getCheatEngineDir(): Returns the folder Cheat Engine is located at
+getLlamaToolsDir(): Returns the folder Cheat Engine is located at
 getCheatEngineProcessID(): Returns the processid of cheat engine
 
 getAutorunPath() : Returns the autorun path
@@ -758,7 +742,7 @@ createProcess(path, parameters OPTIONAL, debug OPTIONAL, breakonentrypoint OPTIO
 debugProcess(interface OPT): starts the debugger for the currently opened process (won't ask the user) Optional interface: 0=default, 1=windows debug, 2=VEHDebug, 3=Kerneldebug
 
 debug_isDebugging(): Returns true if the debugger has been started
-debug_getCurrentDebuggerInterface() : Returns the current debuggerinterface used (1=windows, 2=VEH 3=Kernel, 4=mac native, 5=gdb, nil=no debugging active)
+debug_getCurrentDebuggerInterface() : Returns the current debuggerinterface used (1=windows, 2=VEH 3=Kernel, nil=no debugging active)
 debug_canBreak(): Returns true if there is a possibility the target can stop on a breakpoint. 6.4+
 debug_isBroken(): Returns true if the debugger is currently halted on a thread
 debug_isStepping(): Returns true if the debugger was single stepping an instruction earlier
@@ -1349,7 +1333,6 @@ properties
   CanUndo: boolean
   CharWidth: integer READONLY
   LineHeight: integer READONLY
-  CaretX, CaretY: integer
 
 methods
   CopyToClipboard()
@@ -1457,7 +1440,6 @@ properties
   Items: Strings - Strings derived object containings all the items in the list
   ItemIndex: integer - Get selected index. -1 is nothing selected
   Canvas: Canvas - The canvas object used to render on the object
-  DroppedDown: boolean - True if currently dropped down (can be set as well)
 
 methods
   clear()
@@ -2050,8 +2032,6 @@ methods
   writeDword(integer)
   readQword(): integer
   writeQword(integer)
-  readString(stringlengthinbytes) : Reads a given stringcount
-  writeString(string, include0terminator: boolean OPTIONAL=false)
   readAnsiString(): string
   writeAnsiString(string)
 
@@ -2067,7 +2047,7 @@ methods
   saveToFile(filename) : Writes the contents of the memory stream to the specified file
   loadFromFileNoError(filename):boolean,string - Replaces the contents in the memory stream with the contents of a file on disk. On success returns true, else false with a secondary return the error message
   saveToFileNoError(filename):boolean,string - Writes the contents of the memory stream to the specified file. On success returns true, else false with a secondary return the error message
-  clear(): sets the size to 0
+
 
 
 FileStream Class (Inheritance: HandleStream->Stream->Object)
@@ -2090,7 +2070,6 @@ createTableFile(filename, filepath OPTIONAL): TableFile - Add a new file to your
 properties
   Name: string
   Stream: MemoryStream
-  DoNotSave: boolean
 
 methods
   delete() : Deletes this file from your table.
@@ -2303,7 +2282,6 @@ properties
   SelCount: integer- The number of records that are selected
   SelectedRecord: MemoryRecord - The main selected record
   MemoryRecord[]: MemoryRecord - Array to access the individial memory records
-  List: The internal Treeview control of the addresslist
   [] = MemoryRecord - Default accessor
 
   CheckboxActiveSelectedColor: color
@@ -2495,9 +2473,9 @@ createFoundList(memscan)
 
 properties
   Count: integer - Number of results found
-  Address[index] : string - Returns the address as a string at the given index (index starts at 0)
-  Value[index]: string - Returns the value as a string at the given index (index starts at 0)
-  [index]: string - Same as Address (index starts at 0)
+  Address[index] : string - Returns the address as a string at the given index
+  Value[index]: string - Returns the value as a string at the given index
+  [index]: string - Same as Address
 
 methods
   initialize() : Call this when a memscan has finished scanning. This will open the results for reading
@@ -2538,7 +2516,6 @@ Disassemblerview class: (Inheritance: Panel->CustomControl->WinControl->Control-
 properties
   SelectedAddress: integer - The currently selected address in the disassemblerview
   SelectedAddress2: integer - The secondary selected address in the disassemblerview
-  SelectionSize: integer - The size of the selected area
   TopAddress: Integer - The first address to show
   ShowJumplines: boolean - Determines if the jumplines should be shown
   HideFocusRect: boolean - If set to true the focus rectangle won't be shown
@@ -2729,7 +2706,6 @@ Properties:
   Size: Integer - The number of bytes between the last element and the start. ReadOnly
   Count: Integer - Number of elements in the structure. ReadOnly
   Element[]: structureElement - Returns the structure element at the given index. Readonly
-  [] = Element[]
 Methods:
   getName(): Returns the name
   setName(name): Sets the name
@@ -3181,20 +3157,14 @@ properties
 methods
   lock() : Acquire a lick on this pipe till unlock is called. If lock can not be acquired, wait. Recursive calls are allowed
   unlock()
-  readIntoStream(stream,size)
-  writeFromStream(stream,size OPTIONAL) : Writes the contents of the stream for size bytes into the pipe. If size is omitted, it sends all from the current pointer
-
   writeBytes(ByteTable, size OPTIONAL): Writes the provided byte table to the pipe. if size is not provided, the whole table is sent. Returns the number of bytes sent, or nil on failure
   readBytes(size: integer): returns a byte table from the pipe, or nil on failure
 
   readDouble(): Read a double from the pipe, nil on failure
   readFloat(): Read a float from the pipe, nil on failure
   readQword(): Read an 8 byte value from the pipe, nil on failure
-  readQwords(count): Reads 'count' times 8 byte values from the pipe and returns it as a table
   readDword(): Read a 4 byte value from the pipe, nil on failure
-  readDwords(count): Reads 'count' times 4 byte values from the pipe and returns it as a table
   readWord(): Read a 2 byte value from the pipe, nil on failure
-  readWords(count): Reads 'count' times 2 byte values from the pipe and returns it as a table
   readByte(): Read a byte from the pipe, nil on failure
 
   readString(size: integer): Reads a string from the pipe, nil on failure.  (Can support 0-byte chars)
@@ -3298,7 +3268,6 @@ SymbolList class
 
 Global functions
   createSymbolList() : Creates an empty symbollist
-  createSymbolList(initlist :{name,address}, name: string OPTIONAL) : creates a symbollist with addresses initialized based on a lua table that is build using name:address (like the result of compile)  If name is provided automatically register the list under that name
   getMainSymbolList(): Returns the symhandler internal symbol list (Note: This does not contain .net, modulelist, or other info)
   enumRegisteredSymbolLists() : Returns a table containing all the registered symbollists
 
@@ -3737,7 +3706,6 @@ methods
 
 ModuleLoader(Inheritance: -)
 loadModule(pathtodll, executeEntryPoint OPTIONAL default=true, timeout OPTIONAL default=nil=infinite)
-loadModule(memorystream or tablefile, internalfilename, executeEntryPoint OPTIONAL default=true, timeout OPTIONAL default=nil=infinite)
 
 properties:
   loaded: boolean - true if successfuly mapped
@@ -3984,8 +3952,6 @@ methods
 
 VirtualTreeColunmns class:
 properties
-  []: VirtualTreeColunmn
-
 methods
   add(text OPTIONAL) : Created ands returns a new VirtualTreeColumn object
 
@@ -3993,7 +3959,6 @@ Header class:
 properties
   AutoSizeIndex: integer - When Options contains hoAutoResize this determines which column will be resized on resize of the control
   AutoResize: boolean - shortcut to access the hoAutoResize flag in Options
-  MainColumn: integer - Column index to draw the treepart in.  (e.g: column0 is not visible)
   Columns: VirtualTreeColunmns  
   Options: set(string) - Options is a comma seperated string which can be one of the following:
               hoAutoResize            - Adjust a column so that the header never exceeds the client width of the owner control.
@@ -4127,8 +4092,6 @@ properties
   HasChildren[node]: boolean - gets/sets the state that the node has children
   Selected[node]: boolean - gets/sets the selected state of the node
   Expanded[node]: boolean - gets/sets if the node is expanded (calls onExpanding when set to true)
-  NodeChildCount[node]: integer - Gets the number of childnodes
-  NodeIndex[node]: integer - Gets the index of the node in relation to it's parent
 
 methods
   saveToFile(filepath)
@@ -4162,17 +4125,6 @@ methods
   getNodeParent(node): node - returns a parent node, or nil
   getFirstChild(node): node - returns the first child of a node
   getNextSibling(node): node - gets the next sibling
-  getNodeLevel(node): integer - gets the level at which this node resided (it does this by calling getNodeParent until it hits nil)
-
-GDBServerDebuggerIntaace functions: (only functional when using the gdb server debugger interface)
-  gdb_connected(): returns true when connected
-  gdb_stopped(): returns true if the target is suspended by gdb
-  gdb_break(): sends a ctrl+c to the gdb server which tells it to stop the target
-  gdb_command(string, timeout OPTIONAL): Sends a command to the gdb server and wait for timeout in milliseconds for a reply (default is 2000) if the string is empty only receive data
-  gdb_getcurrentstopreason(): returns the current stopreason.  Nil if not stopped
-  gdb_setCurrentInstructionpointer(address)
-  gdb_getCurrentInstructionpointer(address)
-  
 
 
 ----CEServer----

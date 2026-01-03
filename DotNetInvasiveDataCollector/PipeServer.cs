@@ -1,4 +1,4 @@
-﻿// Copyright Cheat Engine. All Rights Reserved.
+﻿// Copyright parson tools. All Rights Reserved.
 
 using System;
 using System.Threading;
